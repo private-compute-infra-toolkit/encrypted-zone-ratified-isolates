@@ -1,0 +1,15 @@
+{
+  "rust-analyzer.check.overrideCommand": [
+    "${workspaceFolder}/.vscode/rust-analyzer.sh",
+    "$saved_file",
+    "${workspaceFolder}",
+    "/tmp/bazel-rust-ratified-isolates"
+  ],
+  "coverage-gutters.coverageFileNames": ["bazel-out/_coverage/_coverage_report.dat"],
+  "gitblame.commitUrl": "http://pscl/${hash}",
+  "rust-analyzer.linkedProjects": [
+    "noise_session_manager/rust-project.json",
+    "approver/rust-project.json",
+    "crypto_oracle/rust-project.json"
+  ]
+}

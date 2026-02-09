@@ -1,0 +1,121 @@
+# Copyright 2025 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
+load(":isolate_package.bzl", "isolate_package")
+
+exports_files([
+    ".rustfmt.toml",
+    "buf.yaml",
+])
+
+rust_library(
+    name = "data_scope_utils",
+    srcs = ["src/data_scope_utils.rs"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//enforcer/v1:data_scope_rust",
+        "//enforcer/v1:payload_rust",
+    ],
+)
+
+rust_library(
+    name = "crypto_oracle_key_info",
+    srcs = ["src/key_info.rs"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//enforcer/v1:data_scope_rust",
+        "@crates//:debug-ignore",
+        "@crates//:tink-core",
+    ],
+)
+
+rust_library(
+    name = "crypto_oracle_status",
+    srcs = ["src/status.rs"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//enforcer/v1:status_rust",
+        "@crates//:tink-core",
+    ],
+)
+
+rust_library(
+    name = "crypto_oracle",
+    srcs = ["src/crypto_oracle.rs"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":crypto_oracle_key_info",
+        ":crypto_oracle_status",
+        ":data_scope_utils",
+        "//enforcer/v1:data_scope_rust",
+        "//enforcer/v1:status_rust",
+        "//oracle:crypto_oracle_rust",
+        "//oracle:crypto_oracle_service",
+        "@crates//:dashmap",
+        "@crates//:log",
+        "@crates//:tink-core",
+        "@crates//:tink-proto",
+        "@crates//:tink-signature",
+        "@sdk_crates//:tokio",
+        "@sdk_crates//:tonic",
+    ],
+)
+
+rust_test(
+    name = "crypto_oracle_tests",
+    size = "small",
+    srcs = glob(["test/*.rs"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        ":crypto_oracle",
+        ":crypto_oracle_status",
+        ":data_scope_utils",
+        "//enforcer/v1:data_scope_rust",
+        "//oracle:crypto_oracle_rust",
+        "//oracle:crypto_oracle_service",
+        "@crates//:tink-core",
+        "@crates//:tink-signature",
+        "@sdk_crates//:tokio",
+        "@sdk_crates//:tonic",
+    ],
+)
+
+rust_binary(
+    name = "crypto_oracle_isolate",
+    srcs = ["main.rs"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":crypto_oracle",
+        "//oracle:crypto_oracle_rust",
+        "//oracle:crypto_oracle_service",
+        "@sdk_crates//:tokio",
+    ],
+)
+
+isolate_package(
+    base_name = "crypto_oracle",
+    binary = ":crypto_oracle_isolate",
+)
+
+genrule(
+    name = "collect-test-logs",
+    outs = ["collect_test_logs.bin"],
+    cmd_bash = """cat << EOF > '$@'
+tools/collect-test-logs "\\$$@"
+EOF""",
+    executable = True,
+    local = True,
+    message = "copy bazel test logs",
+)

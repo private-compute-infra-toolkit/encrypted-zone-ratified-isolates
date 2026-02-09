@@ -1,0 +1,177 @@
+// Copyright 2025 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package oracle;
+
+// TODO: Move this to a common location (like ratified isolate)
+
+import "enforcer/v1/ez_data_scope.proto";
+import "enforcer/v1/ez_payload.proto";
+import "enforcer/v1/status.proto";
+
+/// KeyType is the type of an individual key
+/// This is analogous to Tink's KeyMaterialType rust struct.
+enum KeyType {
+  KEY_TYPE_UNSPECIFIED = 0;
+  SYMMETRIC_KEY = 1;
+  ASYMMETRIC_PRIVATE = 2;
+  ASYMMETRIC_PUBLIC = 3;
+}
+
+/// KeySetType is the type of a set of key(s) generated and stored together
+enum KeySetType {
+  KEY_SET_UNSPECIFIED = 0;
+  // A single symmetric key
+  SYMMETRIC = 1;
+  // An asymmetric private/public key pair
+  ASYMMETRIC = 2;
+}
+
+/// Identify a symmetric key or an asymmetric key pair
+message KeyIdentifier {
+  // The domain of the key (Required)
+  string domain = 1;
+  // The name of the key within the domain (Required)
+  string key_name = 2;
+  // Scope of result after using this key.
+  // Optional. If not provided, will return with the same scope as the input
+  // data. Can only be used to restrict the scope. Errors if it would relax
+  // scope.
+  enforcer.v1.EzDataScope output_scope = 3;
+}
+
+service OracleApi {
+  /// Creates and stores one (symmetric) or two (asymmetric) Oracle keys
+  rpc GenerateKey(GenerateKeyRequest) returns (GenerateKeyResponse);
+  /// Deletes the specified key from the oracle
+  /// RefreshKey for updating key version, this is for full cleanup
+  rpc DeleteKey(DeleteKeyRequest) returns (DeleteKeyResponse);
+  /// Manually create a new key or key pair with the ID
+  rpc RefreshKey(RefreshKeyRequest) returns (RefreshKeyResponse);
+  /// Returns the public part of an asymmetric key pair
+  rpc GetPublicKey(GetPublicKeyRequest) returns (GetPublicKeyResponse);
+  /// Signs the given message with a key managed by CryptoOracle
+  rpc Sign(SignRequest) returns (SignResponse);
+  /// Verifies the given signature matches the message, using a key managed by
+  /// CryptoOracle
+  rpc Verify(VerifyRequest) returns (VerifyResponse);
+}
+
+message GenerateKeyRequest {
+  // The optional output scope is extracted from the key_id
+  KeyIdentifier key_id = 1;
+  // Determine whether to make a single symmetric key, or an asymmetric
+  // public/private key pair
+  KeySetType key_set_type = 2;
+  // Whether to return the raw public key of an asymmetric pair in the
+  // GenerateKeyResponse (default false)
+  bool return_public_key = 3;
+  // Max number of failed refreshes before a key becomes stale
+  // Optional, if not provided the key will never become stale
+  optional uint32 max_consecutive_failed_refreshes = 4;
+  // If nonzero, how often to refresh the key automatically
+  uint64 refresh_interval_seconds = 5;
+  // Additional parameters (scheme, scope change)
+}
+message GenerateKeyResponse {
+  // Report success/fail. Common fail cases:
+  // - Key ID already exists
+  enforcer.v1.Status status = 1;
+  // If requested and asymmetric, return raw public key (with public scope)
+  enforcer.v1.EzPayload public_key = 2;
+}
+
+message DeleteKeyRequest {
+  KeyIdentifier key_id = 1;
+}
+message DeleteKeyResponse {
+  // Report success/fail. Common fail cases:
+  // - Key ID does not exist
+  enforcer.v1.Status status = 1;
+}
+
+message RefreshKeyRequest {
+  KeyIdentifier key_id = 1;
+  // Whether the previous key is still active (and just not primary), or
+  // deprecated
+  bool deprecate_previous = 2;
+  // Whether to return the raw public key of an asymmetric pair in the
+  // RefreshKeyResponse (default false)
+  bool return_public_key = 3;
+}
+message RefreshKeyResponse {
+  // Report success/fail. Common fail cases:
+  // - Key ID does not exist.
+  // - Asymmetric pair does not have both public and private keys
+  enforcer.v1.Status status = 1;
+  // If requested and asymmetric, return raw public key (with public scope)
+  enforcer.v1.EzPayload public_key = 2;
+}
+
+message GetPublicKeyRequest {
+  KeyIdentifier key_id = 1;
+}
+message GetPublicKeyResponse {
+  // Report success/fail. Common fail cases:
+  // - Key ID does not exist.
+  // - Key ID is not asymmetric.
+  // - Stored pair does not have public key
+  enforcer.v1.Status status = 1;
+  // The public key is always tagged with public scope
+  enforcer.v1.EzPayload public_key = 2;
+  // The version ID of the public key
+  uint32 public_key_version_id = 3;
+}
+
+// Symmetric keys have this serve as a MAC
+message SignRequest {
+  // Must be either symmetric or private
+  KeyIdentifier key_id = 1;
+  enforcer.v1.EzPayload message_data = 2;
+  // Return the public verification key with the response
+  bool return_verification_key = 3;
+  // Optional, try to sign with this version of the key
+  optional uint32 public_key_version_id = 4;
+  // Additional parameters for signature (scheme, scope changes)
+}
+
+/// Returns a new enforcer.v1.EzPayload with the signature of the message
+message SignResponse {
+  // Report success/fail. Common fail cases:
+  // - Key ID does not exist. Key is asymmetric but no private key.
+  // - Key's output scope is set and less restrictive than messages_data's scope
+  // - Requesting signature with non-existent or disabled key version
+  enforcer.v1.Status status = 1;
+  // Scope is key's output_scope if set otherwise message_data's scope
+  enforcer.v1.EzPayload signature = 2;
+  // If requested, the corresponding public verification key
+  enforcer.v1.EzPayload verification_key = 3;
+}
+
+message VerifyRequest {
+  // Must be either symmetric or public
+  KeyIdentifier key_id = 1;
+  enforcer.v1.EzPayload message_data = 2;
+  enforcer.v1.EzPayload signature = 3;
+}
+message VerifyResponse {
+  // Report success/fail. Common fail cases:
+  // - Key ID does not exist.
+  // - Key is asymmetric but no public key.
+  enforcer.v1.Status status = 1;
+  // Boolean value, always public scope
+  bool is_valid_signature = 2;
+}

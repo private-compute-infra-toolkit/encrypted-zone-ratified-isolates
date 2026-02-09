@@ -1,0 +1,60 @@
+# Copyright 2025 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+common --enable_bzlmod
+common --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
+common --experimental_proto_descriptor_sets_include_source_info
+
+build --config=clippy
+build --config=rustfmt
+build --config=analyzer
+# Necessary for protobuf dependency
+build --config=cpp
+
+build --announce_rc
+build --verbose_failures
+build --compilation_mode=opt
+build --color=yes
+
+# Hide warnings for external libraries
+build --output_filter='^//((?!(external):).)*$'
+
+build --incompatible_strict_action_env
+build --strip=always
+try-import %workspace%/google_internal/.bazelrc
+
+build:run_all_tests --cache_test_results=no
+
+test --test_output=errors
+test --test_verbose_timeout_warnings
+# b/392436940 - Make rust_test --nocapture by default
+test --test_env=RUST_TEST_NOCAPTURE=1
+
+# Clippy
+build:clippy --aspects=@rules_rust//rust:defs.bzl%rust_clippy_aspect
+build:clippy --output_groups=+clippy_checks
+
+# Rustfmt
+build:rustfmt --@rules_rust//rust/settings:rustfmt.toml=//:.rustfmt.toml
+build:rustfmt --aspects=@rules_rust//rust:defs.bzl%rustfmt_aspect
+build:rustfmt --output_groups=+rustfmt_checks
+
+# Rust analyzer
+build:analyzer --@rules_rust//:rustc_output_diagnostics=true --output_groups=+rust_lib_rustc_output,+rust_metadata_rustc_output
+
+# C++ version, for proto
+build:cpp --client_env=BAZEL_CXXOPTS=-std=c++20
+build:cpp --cxxopt=-std=c++20
+
+coverage --cache_test_results=no

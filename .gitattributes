@@ -1,0 +1,5 @@
+# A custom merge driver for the Bazel lockfile.
+# https://bazel.build/external/lockfile#automatic-resolution
+approver/MODULE.bazel.lock merge=bazel-lockfile-merge
+crypto_oracle/MODULE.bazel.lock merge=bazel-lockfile-merge
+noise_session_manager/MODULE.bazel.lock merge=bazel-lockfile-merge

@@ -100,6 +100,8 @@ rust_binary(
         ":crypto_oracle",
         "//oracle:crypto_oracle_rust",
         "//oracle:crypto_oracle_service",
+        "@crates//:env_logger",
+        "@crates//:log",
         "@sdk_crates//:tokio",
     ],
 )

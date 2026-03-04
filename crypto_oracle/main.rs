@@ -15,17 +15,26 @@
 use std::sync::Arc;
 
 use crypto_oracle::CryptoOracle;
-use crypto_oracle_sdk::{create_isolate_server, OracleApiIsolateRpcService};
+use crypto_oracle_sdk::{
+    create_isolate_server_with_resp_scope, DataScopeType, OracleApiIsolateRpcService,
+};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    env_logger::init();
+
+    log::info!("Starting Crypto Oracle Ratified Isolate");
     let oracle = Arc::new(CryptoOracle::new());
 
-    let server = create_isolate_server! {
-        OracleApiIsolateRpcService => oracle,
+    log::info!("Starting Crypto Oracle Ratified Isolate Server");
+    // TODO: Per-request scope once supported
+    let server = create_isolate_server_with_resp_scope! {
+        OracleApiIsolateRpcService => oracle => DataScopeType::Public,
     };
 
     server.start(None).await;
+
+    log::info!("Crypto Oracle Ratified Isolate server shut down gracefully");
 
     Ok(())
 }

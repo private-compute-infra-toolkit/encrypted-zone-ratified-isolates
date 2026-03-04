@@ -100,6 +100,10 @@ crate.spec(
     version = "0.4.28",
 )
 crate.spec(
+    package = "env_logger",
+    version = "0.11.8",
+)
+crate.spec(
     package = "dashmap",
     version = "6.1.0",
 )

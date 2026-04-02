@@ -24,7 +24,6 @@ proto_library(
     deps = [
         "//enforcer/v1:data_scope_proto",
         "//enforcer/v1:payload_proto",
-        "//enforcer/v1:status_proto",
     ],
 )
 

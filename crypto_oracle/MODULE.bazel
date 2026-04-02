@@ -24,6 +24,7 @@ bazel_dep(name = "protobuf", version = "31.1", repo_name = "com_google_protobuf"
 bazel_dep(name = "rules_buf", version = "0.5.2")
 bazel_dep(name = "rules_oci", version = "2.2.7")
 bazel_dep(name = "rules_pkg", version = "1.2.0")
+bazel_dep(name = "rules_python", version = "1.9.0")
 bazel_dep(name = "rules_rust", version = "0.63.0")
 bazel_dep(name = "rules_rust_prost", version = "0.63.0")
 bazel_dep(name = "toolchains_protoc", version = "0.5.0")
@@ -96,16 +97,8 @@ crate = use_extension(
     "crate",
 )
 crate.spec(
-    package = "log",
-    version = "0.4.28",
-)
-crate.spec(
     package = "env_logger",
     version = "0.11.8",
-)
-crate.spec(
-    package = "dashmap",
-    version = "6.1.0",
 )
 crate.spec(
     package = "tink-core",
@@ -129,3 +122,32 @@ use_repo(crate, crates = "oracle_crates")  # Give oracle crates default name "cr
 
 oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
 use_repo(oci, "isolate_runtime_ubuntu_base")
+
+# Prevent version skew by matching protoc version to protobuf version, as C++ is the only lang that
+# has no cross-version runtime guarantee:
+# https://protobuf.dev/support/cross-version-runtime-guarantee/#cpp
+protoc = use_extension("@toolchains_protoc//protoc:extensions.bzl", "protoc")
+protoc.toolchain(
+    google_protobuf = "com_google_protobuf",
+    version = "v29.3",
+)
+
+python = use_extension("@rules_python//python/extensions:python.bzl", "python")
+python.toolchain(
+    ignore_root_user_error = True,
+    python_version = "3.13",
+)
+
+pip2 = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
+pip2.parse(
+    hub_name = "sdk-pypi",
+    python_version = "3.13",
+    requirements_lock = "@privacy-sandbox-ez-sdk//tools/plugin:requirements_lock.txt",
+)
+use_repo(pip2, "sdk-pypi")
+
+single_version_override(
+    module_name = "grpc",
+    patches = ["//:grpc_python_versions.patch"],
+    version = "1.78.0",
+)

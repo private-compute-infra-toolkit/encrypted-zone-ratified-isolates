@@ -33,7 +33,7 @@ use crypto_oracle_proto::oracle::{
 };
 use crypto_oracle_sdk::OracleApi;
 use data_scope_proto::enforcer::v1::{DataScopeType, EzDataScope};
-use status_proto::enforcer::v1::Status;
+use tonic::Status;
 
 use crypto_oracle_key_info::{AsymmetricKeyData, KeyData, KeyID, StoredKey};
 use crypto_oracle_status::{create_status, tink_err_status, Code};
@@ -252,13 +252,9 @@ impl OracleApi for CryptoOracle {
             return create_refresh_response(Code::NotFound, "Key ID does not exist");
         };
         let stored_key = entry.get_mut();
-        match refresh_key_helper(stored_key, request.deprecate_previous, request.return_public_key)
-        {
-            Ok(public_key) => create_refresh_response_ok(public_key),
-            Err(status) => {
-                Ok(Response::new(RefreshKeyResponse { status: Some(status), public_key: None }))
-            }
-        }
+        refresh_key_helper(stored_key, request.deprecate_previous, request.return_public_key)
+            .map(create_refresh_response_ok)
+            .map_err(|e| tonic::Status::internal(format!("Failed to refresh key: {e:#?}")))?
     }
 
     /// Returns the public part of an asymmetric key
@@ -314,9 +310,9 @@ impl OracleApi for CryptoOracle {
             return create_sign_response_err(Code::NotFound, "Key ID does not exist");
         };
 
-        if let Err(status) = check_refresh_failures(&stored_key) {
-            return Ok(Response::new(SignResponse { status: Some(status), ..Default::default() }));
-        }
+        check_refresh_failures(&stored_key).map_err(|e| {
+            tonic::Status::internal(format!("Failed to check refresh failures: {e:#?}"))
+        })?;
 
         let scope = match &stored_key.value().output_scope {
             None => message_scope,
@@ -365,19 +361,9 @@ impl OracleApi for CryptoOracle {
 
         // Release lock on key, to grab a mutable entry for the previous version handle instead
         drop(stored_key);
-        let old_signing_key = match self.get_previous_handle(
-            &key_id,
-            requested_key_version_id,
-            current_key_version_id,
-        ) {
-            Ok(handle) => handle,
-            Err(status) => {
-                return Ok(Response::new(SignResponse {
-                    status: Some(status),
-                    ..Default::default()
-                }))
-            }
-        };
+        let old_signing_key = self
+            .get_previous_handle(&key_id, requested_key_version_id, current_key_version_id)
+            .map_err(|e| tonic::Status::internal(format!("Failed to get previous key: {e:#?}")))?;
 
         // Maybe update corresponding returned public key, if requested
         if request.return_verification_key {
@@ -416,12 +402,9 @@ impl OracleApi for CryptoOracle {
         let Some(stored_key) = self.stored_keys.get(&key_id) else {
             return create_verify_response(Code::NotFound, "Key ID does not exist", false);
         };
-        if let Err(status) = check_refresh_failures(&stored_key) {
-            return Ok(Response::new(VerifyResponse {
-                status: Some(status),
-                is_valid_signature: false,
-            }));
-        }
+        check_refresh_failures(&stored_key).map_err(|e| {
+            tonic::Status::internal(format!("Failed to check refresh failures: {e:#?}"))
+        })?;
 
         let verify_key = match &stored_key.value().key_data {
             KeyData::Symmetric(_) => {
@@ -595,61 +578,45 @@ fn sign_with_key(
 }
 
 fn create_gen_response(code: Code, message: &str) -> GenerateKeyResponseResult {
-    Ok(Response::new(GenerateKeyResponse {
-        status: Some(create_status(code, message)),
-        public_key: None,
-    }))
+    Err(tonic::Status::new(tonic::Code::from_i32(code as i32), message))
 }
 fn create_gen_response_ok(public_key: Option<Vec<u8>>) -> GenerateKeyResponseResult {
     Ok(Response::new(GenerateKeyResponse {
-        status: Some(create_status(Code::Ok, "Ok")),
         public_key: public_key.map(|public_key| to_payload(public_key, DataScopeType::Public)),
     }))
 }
 fn create_gen_response_tink(err: TinkError) -> GenerateKeyResponseResult {
-    Ok(Response::new(GenerateKeyResponse {
-        status: Some(tink_err_status("Failed to make key: ", err)),
-        public_key: None,
-    }))
+    Err(tonic::Status::internal(format!("Failed to make key: {err}")))
 }
 
 fn create_delete_response(code: Code, message: &str) -> DeleteKeyResponseResult {
-    Ok(Response::new(DeleteKeyResponse { status: Some(create_status(code, message)) }))
+    if code == Code::Ok {
+        Ok(Response::new(DeleteKeyResponse {}))
+    } else {
+        Err(tonic::Status::new(tonic::Code::from_i32(code as i32), message))
+    }
 }
 
 fn create_refresh_response(code: Code, message: &str) -> RefreshKeyResponseResult {
-    Ok(Response::new(RefreshKeyResponse {
-        status: Some(create_status(code, message)),
-        public_key: None,
-    }))
+    Err(tonic::Status::new(tonic::Code::from_i32(code as i32), message))
 }
 fn create_refresh_response_ok(public_key: Option<Vec<u8>>) -> RefreshKeyResponseResult {
     Ok(Response::new(RefreshKeyResponse {
-        status: Some(create_status(Code::Ok, "Ok")),
         public_key: public_key.map(|public_key| to_payload(public_key, DataScopeType::Public)),
     }))
 }
 
 fn create_get_public_ok(public_key: Vec<u8>, version_id: u32) -> GetPublicKeyResponseResult {
     Ok(Response::new(GetPublicKeyResponse {
-        status: Some(create_status(Code::Ok, "Ok")),
         public_key: Some(to_payload(public_key, DataScopeType::Public)),
         public_key_version_id: version_id,
     }))
 }
 fn create_get_public_err(code: Code, message: &str) -> GetPublicKeyResponseResult {
-    Ok(Response::new(GetPublicKeyResponse {
-        status: Some(create_status(code, message)),
-        public_key: None,
-        public_key_version_id: 0,
-    }))
+    Err(tonic::Status::new(tonic::Code::from_i32(code as i32), message))
 }
 fn create_get_public_tink(message: &str, err: TinkError) -> GetPublicKeyResponseResult {
-    Ok(Response::new(GetPublicKeyResponse {
-        status: Some(tink_err_status(message, err)),
-        public_key: None,
-        public_key_version_id: 0,
-    }))
+    Err(tonic::Status::internal(format!("{message}: {err}")))
 }
 
 fn create_sign_response_ok(
@@ -658,22 +625,15 @@ fn create_sign_response_ok(
     verification_key: Option<Vec<u8>>,
 ) -> SignResposneResult {
     Ok(Response::new(SignResponse {
-        status: Some(create_status(Code::Ok, "Ok")),
         signature: Some(to_payload(signature, scope)),
         verification_key: verification_key.map(|key| to_payload(key, DataScopeType::Public)),
     }))
 }
 fn create_sign_response_err(code: Code, message: &str) -> SignResposneResult {
-    Ok(Response::new(SignResponse {
-        status: Some(create_status(code, message)),
-        ..Default::default()
-    }))
+    Err(tonic::Status::new(tonic::Code::from_i32(code as i32), message))
 }
 fn create_sign_response_tink(message: &str, err: TinkError) -> SignResposneResult {
-    Ok(Response::new(SignResponse {
-        status: Some(tink_err_status(message, err)),
-        ..Default::default()
-    }))
+    Err(tonic::Status::internal(format!("{message}: {err}")))
 }
 
 fn create_verify_response(
@@ -681,14 +641,12 @@ fn create_verify_response(
     message: &str,
     is_valid_signature: bool,
 ) -> VerifyResponseResult {
-    Ok(Response::new(VerifyResponse {
-        status: Some(create_status(code, message)),
-        is_valid_signature,
-    }))
+    if is_valid_signature {
+        Ok(Response::new(VerifyResponse { is_valid_signature }))
+    } else {
+        Err(tonic::Status::new(tonic::Code::from_i32(code as i32), message))
+    }
 }
 fn create_verify_response_tink(message: &str, err: TinkError) -> VerifyResponseResult {
-    Ok(Response::new(VerifyResponse {
-        status: Some(tink_err_status(message, err)),
-        is_valid_signature: false,
-    }))
+    Err(tonic::Status::internal(format!("{message}: {err}")))
 }

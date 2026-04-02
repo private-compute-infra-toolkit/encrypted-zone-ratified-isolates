@@ -34,21 +34,6 @@ buf_lint_test(
 )
 
 proto_library(
-    name = "status_proto",
-    srcs = [
-        "status.proto",
-    ],
-    visibility = ["//visibility:public"],
-)
-
-buf_lint_test(
-    name = "status_lint",
-    size = "small",
-    config = "//:buf.yaml",
-    targets = [":status_proto"],
-)
-
-proto_library(
     name = "payload_proto",
     srcs = [
         "ez_payload.proto",
@@ -100,12 +85,6 @@ proto_descriptor_set(
 rust_prost_library(
     name = "data_scope_rust",
     proto = ":data_scope_proto",
-    visibility = ["//visibility:public"],
-)
-
-rust_prost_library(
-    name = "status_rust",
-    proto = ":status_proto",
     visibility = ["//visibility:public"],
 )
 

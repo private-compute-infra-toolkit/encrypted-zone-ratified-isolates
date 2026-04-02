@@ -46,8 +46,8 @@ rust_library(
     srcs = ["src/status.rs"],
     visibility = ["//visibility:public"],
     deps = [
-        "//enforcer/v1:status_rust",
         "@crates//:tink-core",
+        "@sdk_crates//:tonic",
     ],
 )
 
@@ -60,14 +60,13 @@ rust_library(
         ":crypto_oracle_status",
         ":data_scope_utils",
         "//enforcer/v1:data_scope_rust",
-        "//enforcer/v1:status_rust",
         "//oracle:crypto_oracle_rust",
         "//oracle:crypto_oracle_service",
-        "@crates//:dashmap",
-        "@crates//:log",
         "@crates//:tink-core",
         "@crates//:tink-proto",
         "@crates//:tink-signature",
+        "@sdk_crates//:dashmap",
+        "@sdk_crates//:log",
         "@sdk_crates//:tokio",
         "@sdk_crates//:tonic",
     ],
@@ -101,7 +100,7 @@ rust_binary(
         "//oracle:crypto_oracle_rust",
         "//oracle:crypto_oracle_service",
         "@crates//:env_logger",
-        "@crates//:log",
+        "@sdk_crates//:log",
         "@sdk_crates//:tokio",
     ],
 )

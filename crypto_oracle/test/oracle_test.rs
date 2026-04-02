@@ -24,7 +24,6 @@ use crypto_oracle_sdk::OracleApi;
 use data_scope_proto::enforcer::v1::DataScopeType;
 
 use crypto_oracle::{get_primary_key_raw, CryptoOracle};
-use crypto_oracle_status::Code;
 use data_scope_utils::{extract_payload_message, extract_payload_scope, to_datascope, to_payload};
 
 // Test helper functions
@@ -134,24 +133,24 @@ async fn single_key_test() {
     // Generate a new key
     let gen_request = make_simple_gen_request("d", "key");
     let gen_response = oracle.generate_key(gen_request).await.unwrap().into_inner();
-    assert_eq!(gen_response.status.unwrap().code, Code::Ok as i32);
+
     // Returns empty public key
     assert!(gen_response.public_key.is_none());
 
     // Delete the key
     let del_request = make_del_request("d", "key");
-    let del_response = oracle.delete_key(del_request).await.unwrap().into_inner();
-    assert_eq!(del_response.status.unwrap().code, Code::Ok as i32);
+    let _ = oracle.delete_key(del_request).await.expect("Failed to delete key");
 
     // Fail to delete again, showing key has been deleted
     let del_request = make_del_request("d", "key");
-    let del_response = oracle.delete_key(del_request).await.unwrap().into_inner();
-    assert_eq!(del_response.status.unwrap().code, Code::NotFound as i32);
+    let status =
+        oracle.delete_key(del_request).await.expect_err("Should fail to delete deleted key");
+    assert_eq!(status.code(), tonic::Code::NotFound);
 
     // Generate into the deleted area (fine). Also different scope. Also return public
     let gen_request = make_gen_request("d", "key", Some(DataScopeType::UserPrivate), true, None, 0);
     let gen_response = oracle.generate_key(gen_request).await.unwrap().into_inner();
-    assert_eq!(gen_response.status.unwrap().code, Code::Ok as i32);
+
     // Returns non-empty public key
     assert_ne!(extract_payload_message(&gen_response.public_key.unwrap()).unwrap().len(), 0);
 }
@@ -162,13 +161,13 @@ async fn simple_key_error_test() {
     let oracle: CryptoOracle = CryptoOracle::new();
     // Set up initial key
     let gen_request = make_simple_gen_request("d", "key");
-    let gen_response = oracle.generate_key(gen_request).await.unwrap().into_inner();
-    assert_eq!(gen_response.status.unwrap().code, Code::Ok as i32);
+    let _ = oracle.generate_key(gen_request).await.expect("Failed to generate key");
 
     // Fail to make the same key
     let gen_request = make_simple_gen_request("d", "key");
-    let gen_response = oracle.generate_key(gen_request).await.unwrap().into_inner();
-    assert_eq!(gen_response.status.unwrap().code, Code::AlreadyExists as i32);
+    let status =
+        oracle.generate_key(gen_request).await.expect_err("Should fail to generate existing key");
+    assert_eq!(status.code(), tonic::Code::AlreadyExists);
 
     // Fail on generate missing ID
     let gen_request = Request::new(GenerateKeyRequest { key_id: None, ..Default::default() });
@@ -187,18 +186,18 @@ async fn refresh_key_changed_test() {
     // Set up initial key, return public
     let gen_request = make_gen_request("d", "key", None, true, None, 0);
     let gen_response = oracle.generate_key(gen_request).await.unwrap().into_inner();
-    assert_eq!(gen_response.status.unwrap().code, Code::Ok as i32);
+
     let first_raw_key = extract_payload_message(&gen_response.public_key.unwrap()).unwrap();
     assert_ne!(first_raw_key.len(), 0);
     // Get first public key
     let get_request = make_get_public_request("d", "key");
     let get_response = oracle.get_public_key(get_request).await.unwrap().into_inner();
-    assert_eq!(get_response.status.unwrap().code, Code::Ok as i32);
+
     let first_key = extract_payload_message(&get_response.public_key.unwrap()).unwrap();
     // Refresh, return public
     let refresh_request = make_refresh_request("d", "key", false, true);
     let refresh_response = oracle.refresh_key(refresh_request).await.unwrap().into_inner();
-    assert_eq!(refresh_response.status.unwrap().code, Code::Ok as i32);
+
     let second_raw_key = extract_payload_message(&refresh_response.public_key.unwrap()).unwrap();
     // Raw key has changed
     assert_ne!(second_raw_key.len(), 0);
@@ -206,7 +205,7 @@ async fn refresh_key_changed_test() {
     // Get second public key
     let get_request = make_get_public_request("d", "key");
     let get_response = oracle.get_public_key(get_request).await.unwrap().into_inner();
-    assert_eq!(get_response.status.unwrap().code, Code::Ok as i32);
+
     let second_key = extract_payload_message(&get_response.public_key.unwrap()).unwrap();
     // Key has changed
     assert_ne!(first_key, second_key);
@@ -217,7 +216,7 @@ async fn refresh_key_changed_test() {
     // Refresh with no return public is empty
     let refresh_request = make_refresh_request("d", "key", false, false);
     let refresh_response = oracle.refresh_key(refresh_request).await.unwrap().into_inner();
-    assert_eq!(refresh_response.status.unwrap().code, Code::Ok as i32);
+
     assert!(refresh_response.public_key.is_none());
 }
 
@@ -226,18 +225,19 @@ async fn refresh_key_error_test() {
     let oracle: CryptoOracle = CryptoOracle::new();
     // Set up initial key
     let gen_request = make_simple_gen_request("d", "key");
-    let gen_response = oracle.generate_key(gen_request).await.unwrap().into_inner();
-    assert_eq!(gen_response.status.unwrap().code, Code::Ok as i32);
+    let _ = oracle.generate_key(gen_request).await.expect("Failed to generate key");
 
     // Fail to refresh missing key
     let refresh_request = make_refresh_request("d", "key2", false, false);
-    let refresh_response = oracle.refresh_key(refresh_request).await.unwrap().into_inner();
-    assert_eq!(refresh_response.status.unwrap().code, Code::NotFound as i32);
+    let status =
+        oracle.refresh_key(refresh_request).await.expect_err("Should fail to refresh missing key");
+    assert_eq!(status.code(), tonic::Code::NotFound);
 
     // Fail to refresh no key
     let refresh_request = Request::new(RefreshKeyRequest { key_id: None, ..Default::default() });
-    let refresh_response = oracle.refresh_key(refresh_request).await;
-    assert_eq!(refresh_response.err().unwrap().code(), tonic::Code::InvalidArgument);
+    let status =
+        oracle.refresh_key(refresh_request).await.expect_err("Should fail to refresh no key");
+    assert_eq!(status.code(), tonic::Code::InvalidArgument);
 }
 
 #[tokio::test]
@@ -245,12 +245,11 @@ async fn get_public_key_test() {
     let oracle: CryptoOracle = CryptoOracle::new();
     // Set up initial key
     let gen_request = make_simple_gen_request("d", "key");
-    let gen_response = oracle.generate_key(gen_request).await.unwrap().into_inner();
-    assert_eq!(gen_response.status.unwrap().code, Code::Ok as i32);
+    let _ = oracle.generate_key(gen_request).await.expect("Failed to generate key");
 
     let get_request = make_get_public_request("d", "key");
     let get_response = oracle.get_public_key(get_request).await.unwrap().into_inner();
-    assert_eq!(get_response.status.unwrap().code, Code::Ok as i32);
+
     let key = get_response.public_key.unwrap();
     // Key is public
     let scope = extract_payload_scope(&key).unwrap();
@@ -274,8 +273,7 @@ async fn get_public_key_error_test() {
     let oracle: CryptoOracle = CryptoOracle::new();
     // Set up initial key
     let gen_request = make_simple_gen_request("d", "key");
-    let gen_response = oracle.generate_key(gen_request).await.unwrap().into_inner();
-    assert_eq!(gen_response.status.unwrap().code, Code::Ok as i32);
+    let _ = oracle.generate_key(gen_request).await.expect("Failed to generate key");
 
     // Fail missing ID
     let get_request = Request::new(GetPublicKeyRequest { key_id: None });
@@ -284,8 +282,9 @@ async fn get_public_key_error_test() {
 
     // Fail on ID doesn't exist
     let get_request = make_get_public_request("d", "key2");
-    let get_response = oracle.get_public_key(get_request).await.unwrap().into_inner();
-    assert_eq!(get_response.status.unwrap().code, Code::NotFound as i32);
+    let status =
+        oracle.get_public_key(get_request).await.expect_err("Should fail to get non-existent key");
+    assert_eq!(status.code(), tonic::Code::NotFound);
 }
 
 #[tokio::test]
@@ -294,13 +293,12 @@ async fn scheduled_refresh_test() {
 
     // Set up initial key, with 1s refresh timer
     let gen_request = make_gen_request("d", "key", None, false, None, 1);
-    let gen_response = oracle.generate_key(gen_request).await.unwrap().into_inner();
-    assert_eq!(gen_response.status.unwrap().code, Code::Ok as i32);
+    let _ = oracle.generate_key(gen_request).await.expect("Failed to generate key");
 
     // Get original public key
     let get_request = make_get_public_request("d", "key");
     let get_response = oracle.get_public_key(get_request).await.unwrap().into_inner();
-    assert_eq!(get_response.status.unwrap().code, Code::Ok as i32);
+
     let first_key = extract_payload_message(&get_response.public_key.unwrap()).unwrap();
 
     // Wait long enough to ensure refresh happened
@@ -310,7 +308,7 @@ async fn scheduled_refresh_test() {
     // Also check that the key can be used while scheduled job is running
     let get_request = make_get_public_request("d", "key");
     let get_response = oracle.get_public_key(get_request).await.unwrap().into_inner();
-    assert_eq!(get_response.status.unwrap().code, Code::Ok as i32);
+
     let second_key = extract_payload_message(&get_response.public_key.unwrap()).unwrap();
     // Key has changed by automatic refresh
     assert_ne!(first_key, second_key);
@@ -321,14 +319,13 @@ async fn signature_noscope_test() {
     let oracle: CryptoOracle = CryptoOracle::new();
     // Set up initial key
     let gen_request = make_simple_gen_request("d", "key");
-    let gen_response = oracle.generate_key(gen_request).await.unwrap().into_inner();
-    assert_eq!(gen_response.status.unwrap().code, Code::Ok as i32);
+    let _ = oracle.generate_key(gen_request).await.expect("Failed to generate key");
 
     let message = vec![2, 7, 1, 8, 2, 8];
     let scope = DataScopeType::UserPrivate;
     let sign_request = make_sign_request("d", "key", message.clone(), scope, false, None);
     let sign_response = oracle.sign(sign_request).await.unwrap().into_inner();
-    assert_eq!(sign_response.status.unwrap().code, Code::Ok as i32);
+
     let signature = sign_response.signature.unwrap();
     // Scope same as message scope
     assert_eq!(extract_payload_scope(&signature), Some(scope));
@@ -339,7 +336,7 @@ async fn signature_noscope_test() {
     // Verify
     let verify_request = make_verify_request("d", "key", message, signature_data);
     let verify_response = oracle.verify(verify_request).await.unwrap().into_inner();
-    assert_eq!(verify_response.status.unwrap().code, Code::Ok as i32);
+
     // Assert verify passed
     assert!(verify_response.is_valid_signature);
 }
@@ -350,15 +347,14 @@ async fn signature_withscope_test() {
     let key_scope = DataScopeType::DomainOwned;
     // Set up initial key with scope
     let gen_request = make_gen_request("d", "key", Some(key_scope), false, None, 0);
-    let gen_response = oracle.generate_key(gen_request).await.unwrap().into_inner();
-    assert_eq!(gen_response.status.unwrap().code, Code::Ok as i32);
+    let _ = oracle.generate_key(gen_request).await.expect("Failed to generate key");
 
     // Message less restrictive than key, so restrict signature to key scope
     let message = vec![3, 1, 4, 1, 5, 9];
     let message_scope = DataScopeType::Public;
     let sign_request = make_sign_request("d", "key", message.clone(), message_scope, false, None);
     let sign_response = oracle.sign(sign_request).await.unwrap().into_inner();
-    assert_eq!(sign_response.status.unwrap().code, Code::Ok as i32);
+
     let signature = sign_response.signature.unwrap();
     // Scope same as key scope
     assert_eq!(extract_payload_scope(&signature), Some(key_scope));
@@ -370,7 +366,7 @@ async fn signature_withscope_test() {
     let message_scope = DataScopeType::UserPrivate;
     let sign_request = make_sign_request("d", "key", message.clone(), message_scope, false, None);
     let sign_response = oracle.sign(sign_request).await.unwrap().into_inner();
-    assert_eq!(sign_response.status.unwrap().code, Code::Ok as i32);
+
     let signature = sign_response.signature.unwrap();
     // Scope same as key scope
     assert_eq!(extract_payload_scope(&signature), Some(message_scope));
@@ -381,7 +377,7 @@ async fn signature_withscope_test() {
     // Verify
     let verify_request = make_verify_request("d", "key", message, signature_data);
     let verify_response = oracle.verify(verify_request).await.unwrap().into_inner();
-    assert_eq!(verify_response.status.unwrap().code, Code::Ok as i32);
+
     // Assert verify passed
     assert!(verify_response.is_valid_signature);
 }
@@ -392,7 +388,7 @@ async fn sign_key_return_test() {
     // Set up initial key, saving the raw public key
     let gen_request = make_gen_request("d", "key", None, true, None, 0);
     let gen_response = oracle.generate_key(gen_request).await.unwrap().into_inner();
-    assert_eq!(gen_response.status.unwrap().code, Code::Ok as i32);
+
     let public_key = extract_payload_message(&gen_response.public_key.unwrap()).unwrap();
     assert_ne!(public_key.len(), 0);
 
@@ -402,14 +398,14 @@ async fn sign_key_return_test() {
     // Sign with no verification key requested
     let sign_request = make_sign_request("d", "key", message.clone(), scope, false, None);
     let sign_response = oracle.sign(sign_request).await.unwrap().into_inner();
-    assert_eq!(sign_response.status.unwrap().code, Code::Ok as i32);
+
     assert!(sign_response.signature.is_some());
     assert!(sign_response.verification_key.is_none());
 
     // Sign with verification key requested
     let sign_request = make_sign_request("d", "key", message.clone(), scope, true, None);
     let sign_response = oracle.sign(sign_request).await.unwrap().into_inner();
-    assert_eq!(sign_response.status.unwrap().code, Code::Ok as i32);
+
     assert!(sign_response.signature.is_some());
     // Returned key, matches one from gen
     assert!(sign_response.verification_key.is_some());
@@ -425,16 +421,15 @@ async fn sign_error_test() {
     let key_scope = DataScopeType::DomainOwned;
     // Set up initial key
     let gen_request = make_gen_request("d", "key", Some(key_scope), false, None, 0);
-    let gen_response = oracle.generate_key(gen_request).await.unwrap().into_inner();
-    assert_eq!(gen_response.status.unwrap().code, Code::Ok as i32);
+    let _ = oracle.generate_key(gen_request).await.expect("Failed to generate key");
 
     let message = vec![1, 4, 1, 4, 2, 1];
     let message_scope = DataScopeType::UserPrivate;
 
     // Fail to sign with missing key
     let sign_request = make_sign_request("d", "key2", message.clone(), message_scope, false, None);
-    let sign_response = oracle.sign(sign_request).await.unwrap().into_inner();
-    assert_eq!(sign_response.status.unwrap().code, Code::NotFound as i32);
+    let status = oracle.sign(sign_request).await.expect_err("Should fail to sign with missing key");
+    assert_eq!(status.code(), tonic::Code::NotFound);
 
     // Fail to sign no key
     let sign_request = Request::new(SignRequest {
@@ -464,13 +459,12 @@ async fn signature_versioned_test() {
     let oracle: CryptoOracle = CryptoOracle::new();
     // Set up initial key
     let gen_request = make_simple_gen_request("d", "key");
-    let gen_response = oracle.generate_key(gen_request).await.unwrap().into_inner();
-    assert_eq!(gen_response.status.unwrap().code, Code::Ok as i32);
+    let _ = oracle.generate_key(gen_request).await.expect("Failed to generate key");
 
     // Get key's first version
     let get_request = make_get_public_request("d", "key");
     let get_response = oracle.get_public_key(get_request).await.unwrap().into_inner();
-    assert_eq!(get_response.status.unwrap().code, Code::Ok as i32);
+
     let first_version_id = get_response.public_key_version_id;
     assert_ne!(first_version_id, 0);
     // Make verifier with first version
@@ -483,8 +477,7 @@ async fn signature_versioned_test() {
 
     // Refresh key
     let refresh_request = make_refresh_request("d", "key", false, false);
-    let refresh_response = oracle.refresh_key(refresh_request).await.unwrap().into_inner();
-    assert_eq!(refresh_response.status.unwrap().code, Code::Ok as i32);
+    let _ = oracle.refresh_key(refresh_request).await.expect("Failed to refresh key");
 
     let message = vec![0, 9, 1, 5, 9, 6];
     let scope = DataScopeType::UserPrivate;
@@ -493,7 +486,7 @@ async fn signature_versioned_test() {
     let sign_request =
         make_sign_request("d", "key", message.clone(), scope, true, Some(first_version_id));
     let sign_response = oracle.sign(sign_request).await.unwrap().into_inner();
-    assert_eq!(sign_response.status.unwrap().code, Code::Ok as i32);
+
     let first_signature = extract_payload_message(&sign_response.signature.unwrap()).unwrap();
     // Has same corresponding raw public key
     let first_signature_key =
@@ -506,7 +499,7 @@ async fn signature_versioned_test() {
     // First version accepted by oracle (first version not disabled)
     let verify_request = make_verify_request("d", "key", message.clone(), first_signature.clone());
     let verify_response = oracle.verify(verify_request).await.unwrap().into_inner();
-    assert_eq!(verify_response.status.unwrap().code, Code::Ok as i32);
+
     assert!(verify_response.is_valid_signature);
 
     // Sign with latest version
@@ -527,45 +520,49 @@ async fn verify_error_test() {
     let oracle: CryptoOracle = CryptoOracle::new();
     // Set up initial key
     let gen_request = make_simple_gen_request("d", "key");
-    let gen_response = oracle.generate_key(gen_request).await.unwrap().into_inner();
-    assert_eq!(gen_response.status.unwrap().code, Code::Ok as i32);
+    let _ = oracle.generate_key(gen_request).await.expect("Failed to generate key");
+
     // Second key
     let gen_request = make_simple_gen_request("d", "key2");
-    let gen_response = oracle.generate_key(gen_request).await.unwrap().into_inner();
-    assert_eq!(gen_response.status.unwrap().code, Code::Ok as i32);
+    let _ = oracle.generate_key(gen_request).await.expect("Failed to generate key");
 
     let message = vec![1, 6, 1, 8, 0, 3];
     let scope = DataScopeType::UserPrivate;
     let sign_request = make_sign_request("d", "key", message.clone(), scope, false, None);
     let sign_response = oracle.sign(sign_request).await.unwrap().into_inner();
-    assert_eq!(sign_response.status.unwrap().code, Code::Ok as i32);
+
     let signature = extract_payload_message(&sign_response.signature.unwrap()).unwrap();
 
     // Verification fails on wrong key
     let verify_request = make_verify_request("d", "key2", message.clone(), signature.clone());
-    let verify_response = oracle.verify(verify_request).await.unwrap().into_inner();
-    assert_eq!(verify_response.status.unwrap().code, Code::Ok as i32);
-    assert!(!verify_response.is_valid_signature);
+    let _ = oracle.verify(verify_request).await.expect_err("Should fail to verify with wrong key");
 
     // Verification fails on wrong message
     let message2 = vec![1, 2, 3];
     let verify_request = make_verify_request("d", "key", message2, signature.clone());
-    let verify_response = oracle.verify(verify_request).await.unwrap().into_inner();
-    assert_eq!(verify_response.status.unwrap().code, Code::Ok as i32);
-    assert!(!verify_response.is_valid_signature);
+    let _ =
+        oracle.verify(verify_request).await.expect_err("Should fail to verify with wrong message");
 
     // Verification fails on wrong signature
     let signature2 = vec![1, 2, 3];
     let verify_request = make_verify_request("d", "key", message.clone(), signature2);
-    let verify_response = oracle.verify(verify_request).await.unwrap().into_inner();
-    assert_eq!(verify_response.status.unwrap().code, Code::Ok as i32);
-    assert!(!verify_response.is_valid_signature);
+    let _ = oracle
+        .verify(verify_request)
+        .await
+        .expect_err("Should fail to verify with wrong signature");
+
+    // Verification fails on wrong signature
+    let signature2 = vec![1, 2, 3];
+    let verify_request = make_verify_request("d", "key", message.clone(), signature2);
+    let _ = oracle
+        .verify(verify_request)
+        .await
+        .expect_err("Should fail to verify with wrong signature");
 
     // Fail on missing key
     let verify_request = make_verify_request("d", "not_key", message.clone(), signature.clone());
-    let verify_response = oracle.verify(verify_request).await.unwrap().into_inner();
-    assert_eq!(verify_response.status.unwrap().code, Code::NotFound as i32);
-    assert!(!verify_response.is_valid_signature);
+    let _ =
+        oracle.verify(verify_request).await.expect_err("Should fail to verify with missing key");
 
     // Fail on no key
     let verify_request = Request::new(VerifyRequest {
@@ -573,8 +570,9 @@ async fn verify_error_test() {
         message_data: Some(to_payload(message.clone(), scope)),
         signature: Some(to_payload(signature.clone(), scope)),
     });
-    let verify_response = oracle.verify(verify_request).await;
-    assert_eq!(verify_response.err().unwrap().code(), tonic::Code::InvalidArgument);
+    let status =
+        oracle.verify(verify_request).await.expect_err("Should fail to verify with no key");
+    assert_eq!(status.code(), tonic::Code::InvalidArgument);
 
     // Fail on no message
     let verify_request = Request::new(VerifyRequest {
@@ -582,8 +580,9 @@ async fn verify_error_test() {
         message_data: None,
         signature: Some(to_payload(signature.clone(), scope)),
     });
-    let verify_response = oracle.verify(verify_request).await;
-    assert_eq!(verify_response.err().unwrap().code(), tonic::Code::InvalidArgument);
+    let status =
+        oracle.verify(verify_request).await.expect_err("Should fail to verify with no message");
+    assert_eq!(status.code(), tonic::Code::InvalidArgument);
 
     // Fail on no signature
     let verify_request = Request::new(VerifyRequest {
@@ -591,8 +590,9 @@ async fn verify_error_test() {
         message_data: Some(to_payload(message.clone(), scope)),
         signature: None,
     });
-    let verify_response = oracle.verify(verify_request).await;
-    assert_eq!(verify_response.err().unwrap().code(), tonic::Code::InvalidArgument);
+    let status =
+        oracle.verify(verify_request).await.expect_err("Should fail to verify with no signature");
+    assert_eq!(status.code(), tonic::Code::InvalidArgument);
 }
 
 #[tokio::test]
@@ -600,8 +600,7 @@ async fn verify_active_prior_test() {
     let oracle: CryptoOracle = CryptoOracle::new();
     // Set up initial key
     let gen_request = make_simple_gen_request("d", "key");
-    let gen_response = oracle.generate_key(gen_request).await.unwrap().into_inner();
-    assert_eq!(gen_response.status.unwrap().code, Code::Ok as i32);
+    let _ = oracle.generate_key(gen_request).await.expect("Failed to generate key");
 
     // Sign using first key
     let message = vec![0, 5, 7, 7, 2, 1];
@@ -612,13 +611,12 @@ async fn verify_active_prior_test() {
 
     // Refresh without deactivate previous
     let refresh_request = make_refresh_request("d", "key", false, false);
-    let refresh_response = oracle.refresh_key(refresh_request).await.unwrap().into_inner();
-    assert_eq!(refresh_response.status.unwrap().code, Code::Ok as i32);
+    let _ = oracle.refresh_key(refresh_request).await.expect("Failed to refresh key");
 
     // Verify still works, since previous key is still active, just not primary
     let verify_request = make_verify_request("d", "key", message.clone(), signature.clone());
     let verify_response = oracle.verify(verify_request).await.unwrap().into_inner();
-    assert_eq!(verify_response.status.unwrap().code, Code::Ok as i32);
+
     assert!(verify_response.is_valid_signature);
 
     // Signature has changed if signed with new key
@@ -634,8 +632,7 @@ async fn verify_deactive_prior_test() {
     let oracle: CryptoOracle = CryptoOracle::new();
     // Set up initial key
     let gen_request = make_simple_gen_request("d", "key");
-    let gen_response = oracle.generate_key(gen_request).await.unwrap().into_inner();
-    assert_eq!(gen_response.status.unwrap().code, Code::Ok as i32);
+    let _ = oracle.generate_key(gen_request).await.expect("Failed to generate key");
 
     // Sign using first key
     let message = vec![0, 7, 3, 2, 0, 5];
@@ -646,12 +643,12 @@ async fn verify_deactive_prior_test() {
 
     // Refresh with deactivate previous
     let refresh_request = make_refresh_request("d", "key", true, false);
-    let refresh_response = oracle.refresh_key(refresh_request).await.unwrap().into_inner();
-    assert_eq!(refresh_response.status.unwrap().code, Code::Ok as i32);
+    let _ = oracle.refresh_key(refresh_request).await.expect("Failed to refresh key");
 
     // Verify fails, since previous key has been deactivated
     let verify_request = make_verify_request("d", "key", message.clone(), signature.clone());
-    let verify_response = oracle.verify(verify_request).await.unwrap().into_inner();
-    assert_eq!(verify_response.status.unwrap().code, Code::Ok as i32);
-    assert!(!verify_response.is_valid_signature);
+    let _ = oracle
+        .verify(verify_request)
+        .await
+        .expect_err("Should fail to verify with deactivated key");
 }

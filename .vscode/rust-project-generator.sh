@@ -21,6 +21,7 @@ readonly GIT_ROOT_DIR
 
 # If at the root workspace, generate for all sub bazel workspaces
 declare -a -r SUBDIRS=(
+  anonymous_token_spender
   approver
   crypto_oracle
   noise_session_manager

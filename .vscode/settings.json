@@ -10,6 +10,7 @@
   "rust-analyzer.linkedProjects": [
     "noise_session_manager/rust-project.json",
     "approver/rust-project.json",
-    "crypto_oracle/rust-project.json"
+    "crypto_oracle/rust-project.json",
+    "anonymous_token_spender/rust-project.json"
   ]
 }

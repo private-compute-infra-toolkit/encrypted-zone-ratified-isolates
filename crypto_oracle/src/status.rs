@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use status_proto::enforcer::v1::Status;
 use tink_core::TinkError;
+use tonic::Status;
 
 /* TODO: Use enums for status code, once status is moved to a common EZ location
  * See: b/425442136, b/421253802, https://cs/google3/google/rpc/code.proto
@@ -32,8 +32,8 @@ pub enum Code {
 }
 
 pub fn create_status(code: Code, message: &str) -> Status {
-    Status { code: code as i32, message: message.to_string() }
+    Status::new((code as i32).into(), message)
 }
 pub fn tink_err_status(message: &str, err: TinkError) -> Status {
-    Status { code: Code::Internal as i32, message: message.to_string() + ": " + &err.to_string() }
+    Status::new((Code::Internal as i32).into(), message.to_string() + ": " + &err.to_string())
 }

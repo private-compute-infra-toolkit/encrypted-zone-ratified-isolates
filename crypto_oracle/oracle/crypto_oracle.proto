@@ -20,7 +20,6 @@ package oracle;
 
 import "enforcer/v1/ez_data_scope.proto";
 import "enforcer/v1/ez_payload.proto";
-import "enforcer/v1/status.proto";
 
 /// KeyType is the type of an individual key
 /// This is analogous to Tink's KeyMaterialType rust struct.
@@ -87,9 +86,6 @@ message GenerateKeyRequest {
   // Additional parameters (scheme, scope change)
 }
 message GenerateKeyResponse {
-  // Report success/fail. Common fail cases:
-  // - Key ID already exists
-  enforcer.v1.Status status = 1;
   // If requested and asymmetric, return raw public key (with public scope)
   enforcer.v1.EzPayload public_key = 2;
 }
@@ -98,9 +94,6 @@ message DeleteKeyRequest {
   KeyIdentifier key_id = 1;
 }
 message DeleteKeyResponse {
-  // Report success/fail. Common fail cases:
-  // - Key ID does not exist
-  enforcer.v1.Status status = 1;
 }
 
 message RefreshKeyRequest {
@@ -113,10 +106,6 @@ message RefreshKeyRequest {
   bool return_public_key = 3;
 }
 message RefreshKeyResponse {
-  // Report success/fail. Common fail cases:
-  // - Key ID does not exist.
-  // - Asymmetric pair does not have both public and private keys
-  enforcer.v1.Status status = 1;
   // If requested and asymmetric, return raw public key (with public scope)
   enforcer.v1.EzPayload public_key = 2;
 }
@@ -125,11 +114,6 @@ message GetPublicKeyRequest {
   KeyIdentifier key_id = 1;
 }
 message GetPublicKeyResponse {
-  // Report success/fail. Common fail cases:
-  // - Key ID does not exist.
-  // - Key ID is not asymmetric.
-  // - Stored pair does not have public key
-  enforcer.v1.Status status = 1;
   // The public key is always tagged with public scope
   enforcer.v1.EzPayload public_key = 2;
   // The version ID of the public key
@@ -150,11 +134,6 @@ message SignRequest {
 
 /// Returns a new enforcer.v1.EzPayload with the signature of the message
 message SignResponse {
-  // Report success/fail. Common fail cases:
-  // - Key ID does not exist. Key is asymmetric but no private key.
-  // - Key's output scope is set and less restrictive than messages_data's scope
-  // - Requesting signature with non-existent or disabled key version
-  enforcer.v1.Status status = 1;
   // Scope is key's output_scope if set otherwise message_data's scope
   enforcer.v1.EzPayload signature = 2;
   // If requested, the corresponding public verification key
@@ -168,10 +147,6 @@ message VerifyRequest {
   enforcer.v1.EzPayload signature = 3;
 }
 message VerifyResponse {
-  // Report success/fail. Common fail cases:
-  // - Key ID does not exist.
-  // - Key is asymmetric but no public key.
-  enforcer.v1.Status status = 1;
   // Boolean value, always public scope
   bool is_valid_signature = 2;
 }

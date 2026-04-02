@@ -9,7 +9,7 @@ target/
 .ijwb*
 # Bazel symlinks
 **/bazel-*
-/dist/
+**/dist/
 crypto_oracle/dist
 # Generated ez-mcp extension
 tools/mcp/ez-mcp

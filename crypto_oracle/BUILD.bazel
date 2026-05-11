@@ -25,8 +25,8 @@ rust_library(
     srcs = ["src/data_scope_utils.rs"],
     visibility = ["//visibility:public"],
     deps = [
-        "//enforcer/v1:data_scope_rust",
-        "//enforcer/v1:payload_rust",
+        "@privacy-sandbox-ez-sdk//enforcer/v1:data_scope_rust",
+        "@privacy-sandbox-ez-sdk//enforcer/v1:payload_rust",
     ],
 )
 
@@ -35,9 +35,9 @@ rust_library(
     srcs = ["src/key_info.rs"],
     visibility = ["//visibility:public"],
     deps = [
-        "//enforcer/v1:data_scope_rust",
-        "@crates//:debug-ignore",
-        "@crates//:tink-core",
+        "@oracle_crates//:debug-ignore",
+        "@oracle_crates//:tink-core",
+        "@privacy-sandbox-ez-sdk//enforcer/v1:data_scope_rust",
     ],
 )
 
@@ -46,8 +46,8 @@ rust_library(
     srcs = ["src/status.rs"],
     visibility = ["//visibility:public"],
     deps = [
-        "@crates//:tink-core",
-        "@sdk_crates//:tonic",
+        "@crates//:tonic",
+        "@oracle_crates//:tink-core",
     ],
 )
 
@@ -59,16 +59,17 @@ rust_library(
         ":crypto_oracle_key_info",
         ":crypto_oracle_status",
         ":data_scope_utils",
-        "//enforcer/v1:data_scope_rust",
-        "//oracle:crypto_oracle_rust",
-        "//oracle:crypto_oracle_service",
-        "@crates//:tink-core",
-        "@crates//:tink-proto",
-        "@crates//:tink-signature",
-        "@sdk_crates//:dashmap",
-        "@sdk_crates//:log",
-        "@sdk_crates//:tokio",
-        "@sdk_crates//:tonic",
+        "//v1:crypto_oracle_rust",
+        "//v1:crypto_oracle_service",
+        "@crates//:dashmap",
+        "@crates//:log",
+        "@crates//:tokio",
+        "@crates//:tonic",
+        "@crates//:tracing",
+        "@oracle_crates//:tink-core",
+        "@oracle_crates//:tink-proto",
+        "@oracle_crates//:tink-signature",
+        "@privacy-sandbox-ez-sdk//enforcer/v1:data_scope_rust",
     ],
 )
 
@@ -81,13 +82,13 @@ rust_test(
         ":crypto_oracle",
         ":crypto_oracle_status",
         ":data_scope_utils",
-        "//enforcer/v1:data_scope_rust",
-        "//oracle:crypto_oracle_rust",
-        "//oracle:crypto_oracle_service",
-        "@crates//:tink-core",
-        "@crates//:tink-signature",
-        "@sdk_crates//:tokio",
-        "@sdk_crates//:tonic",
+        "//v1:crypto_oracle_rust",
+        "//v1:crypto_oracle_service",
+        "@crates//:tokio",
+        "@crates//:tonic",
+        "@oracle_crates//:tink-core",
+        "@oracle_crates//:tink-signature",
+        "@privacy-sandbox-ez-sdk//enforcer/v1:data_scope_rust",
     ],
 )
 
@@ -97,11 +98,13 @@ rust_binary(
     visibility = ["//visibility:public"],
     deps = [
         ":crypto_oracle",
-        "//oracle:crypto_oracle_rust",
-        "//oracle:crypto_oracle_service",
-        "@crates//:env_logger",
-        "@sdk_crates//:log",
-        "@sdk_crates//:tokio",
+        "//v1:crypto_oracle_rust",
+        "//v1:crypto_oracle_service",
+        "@crates//:log",
+        "@crates//:tokio",
+        "@oracle_crates//:clap",
+        "@oracle_crates//:env_logger",
+        "@shared_lib//traces",
     ],
 )
 

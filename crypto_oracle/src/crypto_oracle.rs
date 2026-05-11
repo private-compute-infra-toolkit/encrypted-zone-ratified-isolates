@@ -26,7 +26,7 @@ use tink_core::{
 use tink_signature::{ecdsa_p256_key_without_prefix_template, new_signer, new_verifier};
 use tonic::{Request, Response};
 
-use crypto_oracle_proto::oracle::{
+use crypto_oracle_proto::crypto_oracle::v1::{
     DeleteKeyRequest, DeleteKeyResponse, GenerateKeyRequest, GenerateKeyResponse,
     GetPublicKeyRequest, GetPublicKeyResponse, KeyIdentifier, KeySetType, RefreshKeyRequest,
     RefreshKeyResponse, SignRequest, SignResponse, VerifyRequest, VerifyResponse,
@@ -166,6 +166,7 @@ impl OracleApi for CryptoOracle {
     /// TODO: Implement Symmetric keygen
     /// Currently only does ecdsa_p256 asymmetric keys
     /// Returns nonzero status if can't parse, key already exists
+    #[tracing::instrument(name = "CryptoOracle.generate_key", skip_all)]
     async fn generate_key(
         &self,
         request: Request<GenerateKeyRequest>,
@@ -228,6 +229,7 @@ impl OracleApi for CryptoOracle {
     /// Deletes a key
     /// Removes the entire keyset from storage. Errors if key doesn't exist
     /// Cancels any scheduled refreshes, errors if failed to lock
+    #[tracing::instrument(name = "CryptoOracle.delete_key", skip_all)]
     async fn delete_key(&self, request: Request<DeleteKeyRequest>) -> DeleteKeyResponseResult {
         let request = request.into_inner();
 
@@ -245,6 +247,7 @@ impl OracleApi for CryptoOracle {
     /// Refreshes a held key, generating a new key (pair) version
     /// Optionally deactivates the previous key
     /// Tracks consecutive failures of the refresh itself
+    #[tracing::instrument(name = "CryptoOracle.refresh_key", skip_all)]
     async fn refresh_key(&self, request: Request<RefreshKeyRequest>) -> RefreshKeyResponseResult {
         let request = request.into_inner();
         let (key_id, _) = parse_key_id(request.key_id)?;
@@ -260,6 +263,7 @@ impl OracleApi for CryptoOracle {
     /// Returns the public part of an asymmetric key
     /// Returns a serialization of a handle containing only the primary key
     /// Returns nonzero status if can't parse, key doesn't exist, key is symmetric
+    #[tracing::instrument(name = "CryptoOracle.get_public_key", skip_all)]
     async fn get_public_key(
         &self,
         request: Request<GetPublicKeyRequest>,
@@ -292,6 +296,7 @@ impl OracleApi for CryptoOracle {
     // If no key scope, uses message scope. Otherwise uses the more restrictive
     // Does not allow for scope relaxation (key scope weaker than message scope)
     // Currently assumes that the requested message payload has only one message
+    #[tracing::instrument(name = "CryptoOracle.sign", skip_all)]
     async fn sign(&self, request: Request<SignRequest>) -> SignResposneResult {
         let request = request.into_inner();
 
@@ -382,6 +387,7 @@ impl OracleApi for CryptoOracle {
 
     /// Verify that the signature matches the message using the key
     /// Returns verification result (t/f) as public
+    #[tracing::instrument(name = "CryptoOracle.verify", skip_all)]
     async fn verify(&self, request: Request<VerifyRequest>) -> VerifyResponseResult {
         let request = request.into_inner();
 

@@ -16,7 +16,7 @@ use tink_core::keyset::{BinaryReader, Handle};
 use tink_signature::new_verifier;
 use tonic::Request;
 
-use crypto_oracle_proto::oracle::{
+use crypto_oracle_proto::crypto_oracle::v1::{
     DeleteKeyRequest, GenerateKeyRequest, GetPublicKeyRequest, KeyIdentifier, KeySetType,
     RefreshKeyRequest, SignRequest, VerifyRequest,
 };

@@ -33,7 +33,7 @@ bazel_dep(name = "toolchains_protoc", version = "0.5.0")
 bazel_dep(name = "privacy-sandbox-ez-sdk", version = "0.0.0")
 local_path_override(
     module_name = "privacy-sandbox-ez-sdk",
-    path = "../.sdk-v1",
+    path = "../sdk",
 )
 
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
@@ -97,6 +97,11 @@ crate = use_extension(
     "crate",
 )
 crate.spec(
+    features = ["derive"],
+    package = "clap",
+    version = "4.5.53",
+)
+crate.spec(
     package = "env_logger",
     version = "0.11.8",
 )
@@ -116,9 +121,12 @@ crate.spec(
     package = "debug-ignore",
     version = "1.0.5",
 )
+crate.spec(
+    package = "tempfile",
+    version = "3.13.0",
+)
 crate.from_specs(name = "oracle_crates")
-use_repo(crate, sdk_crates = "crates")  # Give SDK crates a different name
-use_repo(crate, crates = "oracle_crates")  # Give oracle crates default name "crates"
+use_repo(crate, "crates", "oracle_crates")
 
 oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
 use_repo(oci, "isolate_runtime_ubuntu_base")
@@ -150,4 +158,11 @@ single_version_override(
     module_name = "grpc",
     patches = ["//:grpc_python_versions.patch"],
     version = "1.78.0",
+)
+
+local_repository = use_repo_rule("@bazel_tools//tools/build_defs/repo:local.bzl", "local_repository")
+
+local_repository(
+    name = "shared_lib",
+    path = "../shared_lib",
 )

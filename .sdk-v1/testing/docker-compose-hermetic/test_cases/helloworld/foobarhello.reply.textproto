@@ -1,3 +1,0 @@
-# proto-file: examples/helloworld/proto/greeter.proto
-# proto-message: helloworld.HelloReply
-message: "Hello Foobar"

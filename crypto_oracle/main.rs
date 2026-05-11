@@ -14,14 +14,26 @@
 
 use std::sync::Arc;
 
+use clap::Parser;
 use crypto_oracle::CryptoOracle;
 use crypto_oracle_sdk::{
     create_isolate_server_with_resp_scope, DataScopeType, OracleApiIsolateRpcService,
 };
 
+#[derive(Parser, Debug)]
+#[command(version, about)]
+struct Args {
+    /// OTel traces endpoint
+    #[arg(long)]
+    otel_traces_endpoint: Option<String>,
+}
+
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let args = Args::parse();
     env_logger::init();
+
+    let _otel_traces = traces::setup_telemetry("crypto_oracle", &args.otel_traces_endpoint).await?;
 
     log::info!("Starting Crypto Oracle Ratified Isolate");
     let oracle = Arc::new(CryptoOracle::new());

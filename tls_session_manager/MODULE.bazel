@@ -1,0 +1,125 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""TLS Session Manager ratified isolate"""
+
+module(
+    name = "tls-session-manager",
+    version = "0.0.0",
+)
+
+bazel_dep(name = "protobuf", version = "33.1", repo_name = "com_google_protobuf")
+bazel_dep(name = "rules_buf", version = "0.5.2")
+bazel_dep(name = "rules_oci", version = "2.2.7")
+bazel_dep(name = "rules_pkg", version = "1.2.0")
+bazel_dep(name = "rules_proto", version = "7.1.0")
+bazel_dep(name = "rules_python", version = "1.9.0")
+bazel_dep(name = "rules_rust", version = "0.70.0")
+bazel_dep(name = "rules_rust_prost", version = "0.70.0")
+bazel_dep(name = "toolchains_protoc", version = "0.5.0")
+bazel_dep(name = "toolchains_llvm_bootstrapped", version = "0.2.4")
+
+# Oak
+bazel_dep(name = "aspect_bazel_lib", version = "2.21.2")
+bazel_dep(name = "grpc", version = "1.78.0", repo_name = "com_github_grpc_grpc")
+bazel_dep(name = "grpc-java", version = "1.75.0", repo_name = "io_grpc_grpc_java")
+bazel_dep(name = "abseil-cpp", version = "20250512.1", repo_name = "com_google_absl")
+
+# SDK from submodule
+bazel_dep(name = "privacy-sandbox-ez-sdk", version = "0.0.0")
+local_path_override(
+    module_name = "privacy-sandbox-ez-sdk",
+    path = "../sdk",
+)
+
+# Oak
+# Depend on Oak for shared toolchains and crates.
+bazel_dep(name = "oak", version = "0.0.0")
+archive_override(
+    module_name = "oak",
+    integrity = "sha256-TPq+K3O/r7keZ6hfxEEm32J0cUorYLSeJuc0D+DrXBE=",
+    strip_prefix = "oak-483fb7742cbc82c98b70c68e03f592e3e3ac3231",
+    urls = ["https://github.com/project-oak/oak/archive/483fb7742cbc82c98b70c68e03f592e3e3ac3231.tar.gz"],
+)
+
+acr = use_extension("@oak//bazel/crates:extensions.bzl", "aliased_crates_repository")
+use_repo(acr, "oak_crates_index")
+
+# Configure hermetic C++ toolchain
+register_toolchains(
+    "@toolchains_llvm_bootstrapped//toolchain:linux_amd64",
+)
+
+# Configure Rust toolchain
+# Use Rust stable version.
+rust = use_extension("@rules_rust//rust:extensions.bzl", "rust")
+rust.toolchain(
+    edition = "2021",
+    versions = ["1.85.0"],
+)
+use_repo(rust, "rust_toolchains")
+
+register_toolchains("@rust_toolchains//:all")
+
+# Custom Prost toolchain
+register_toolchains(
+    "@//toolchains:prost_toolchain",
+    "@//toolchains:proto_toolchain",
+)
+
+register_toolchains("@rust_toolchains//:all")
+
+# Create a repo for all crates used by Cargo-enabled targets, under "crates"
+crate = use_extension(
+    "@rules_rust//crate_universe:extension.bzl",
+    "crate",
+)
+crate.spec(
+    package = "env_logger",
+    version = "0.11.8",
+)
+crate.spec(
+    features = ["derive"],
+    package = "clap",
+    version = "4.5.53",
+)
+crate.from_specs(name = "tsm_crates")
+use_repo(crate, "crates", "tsm_crates")
+
+oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
+use_repo(oci, "isolate_runtime_ubuntu_base")
+
+single_version_override(
+    module_name = "grpc",
+    patches = ["//patches:grpc_python_versions.patch"],
+    version = "1.78.0",
+)
+
+python = use_extension("@rules_python//python/extensions:python.bzl", "python")
+python.toolchain(
+    ignore_root_user_error = True,
+    python_version = "3.13",
+)
+
+pip2 = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
+pip2.parse(
+    extra_pip_args = [
+        "--index-url",
+        "https://pypi.org/simple",
+    ],
+    hub_name = "sdk-pypi",
+    python_version = "3.13",
+    requirements_lock = "@privacy-sandbox-ez-sdk//tools/plugin:requirements_lock.txt",
+)
+use_repo(pip2, "sdk-pypi")

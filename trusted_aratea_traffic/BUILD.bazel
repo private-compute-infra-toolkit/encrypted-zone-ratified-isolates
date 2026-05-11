@@ -1,0 +1,105 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+load("@privacy-sandbox-ez-sdk//tools/plugin:ez_sdk.bzl", "ez_isolate_service_rs")
+load("@rules_proto//proto:defs.bzl", "proto_library")
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
+load("@rules_rust_prost//:defs.bzl", "rust_prost_library")
+load("//:isolate_package.bzl", "isolate_package")
+
+exports_files([".rustfmt.toml"])
+
+proto_library(
+    name = "private_inference_service_proto",
+    srcs = ["private_inference_service.proto"],
+    strip_import_prefix = "",
+)
+
+rust_prost_library(
+    name = "private_inference_service_rust_proto",
+    proto = ":private_inference_service_proto",
+)
+
+ez_isolate_service_rs(
+    name = "trusted_aratea_traffic_sdk",
+    crate_name = "ez_isolate_bridge_sdk",
+    proto_basename = "private_inference_service",
+    protos = [":private_inference_service_proto"],
+    rust_protos = [":private_inference_service_rust_proto"],
+    deps = [
+    ],
+)
+
+rust_binary(
+    name = "trusted_aratea_traffic_isolate",
+    srcs = ["main.rs"],
+    edition = "2021",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":trusted_aratea_traffic_lib",
+        ":trusted_aratea_traffic_sdk",
+        "@crates//:anyhow",
+        "@crates//:tokio",
+        "@privacy-sandbox-ez-sdk//enforcer/v1:enforcer_rust",
+        "@trusted_aratea_traffic_crates//:clap",
+        "@trusted_aratea_traffic_crates//:env_logger",
+        "@trusted_aratea_traffic_crates//:log",
+    ],
+)
+
+rust_library(
+    name = "trusted_aratea_traffic_lib",
+    srcs = [
+        "src/lib.rs",
+        "src/trusted_aratea_traffic.rs",
+    ],
+    edition = "2021",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":private_inference_service_rust_proto",
+        ":trusted_aratea_traffic_sdk",
+        "@crates//:anyhow",
+        "@crates//:prost",
+        "@crates//:prost-types",
+        "@crates//:tokio",
+        "@crates//:tonic",
+        "@privacy-sandbox-ez-sdk//enforcer/v1:enforcer_rust",
+        "@trusted_aratea_traffic_crates//:log",
+    ],
+)
+
+rust_test(
+    name = "trusted_aratea_traffic_test",
+    size = "small",
+    srcs = ["tests/trusted_aratea_traffic_test.rs"],
+    edition = "2021",
+    deps = [
+        ":private_inference_service_rust_proto",
+        ":trusted_aratea_traffic_lib",
+        ":trusted_aratea_traffic_sdk",
+        "@crates//:anyhow",
+        "@crates//:prost",
+        "@crates//:prost-types",
+        "@crates//:tokio",
+        "@crates//:tokio-stream",
+        "@crates//:tonic",
+        "@privacy-sandbox-ez-sdk//enforcer/v1:enforcer_rust",
+        "@privacy-sandbox-ez-sdk//enforcer/v1:payload_rust",
+    ],
+)
+
+isolate_package(
+    base_name = "trusted_aratea_traffic",
+    binary = ":trusted_aratea_traffic_isolate",
+)

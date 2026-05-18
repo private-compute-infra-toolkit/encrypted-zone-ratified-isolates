@@ -21,8 +21,14 @@ service PrivateInferenceService {
       returns (GenerateContentResponse) {}
 }
 
+enum FeatureName {
+  FEATURE_NAME_UNSPECIFIED = 0;
+  // SmartTrust feature names (1100-1199)
+  reserved 1100 to 1199;
+}
+
 message GenerateContentRequest {
-  int32 opaque_field_1 = 1;
+  FeatureName feature_name = 1;
   bytes opaque_field_2 = 2;
 }
 

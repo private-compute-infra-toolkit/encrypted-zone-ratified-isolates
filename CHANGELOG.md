@@ -2,6 +2,40 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## 0.8.0 (2026-05-18)
+
+
+### Dependencies
+
+* **deps:** Update DevKit to release-3.6.0
+
+
+### Noise Session Manager
+
+* **noise:** Use SDK service
+
+
+### SDK
+
+* **sdk:** Clean up SDK
+* **sdk:** Manual sync of SDK
+* **sdk:** Sync Otel from SDK
+
+
+### Traces
+
+* **traces:** Adjust sampling rate
+
+
+### Features
+
+* **tat:** only allow Smart Trust features
+
+
+### Bug Fixes
+
+* **tat:** Hybrid payload and pip2
+
 ## 0.7.0 (2026-05-11)
 
 

@@ -42,7 +42,6 @@ import os
 import re
 import sys
 import traceback
-from typing import Any
 
 import jinja2
 from jinja2 import exceptions
@@ -82,7 +81,7 @@ def _ext(value: str) -> str:
 
 def _trim_suffix(value: str, suffix: str) -> str:
   if suffix and value.endswith(suffix):
-    return value[:-len(suffix)]
+    return value[: -len(suffix)]
   return value
 
 
@@ -111,8 +110,7 @@ def create_jinja_environment(template_dir: str) -> Environment:
 
 
 def generate_code(
-    request: plugin_pb2.CodeGeneratorRequest,
-    env: Environment | None = None
+    request: plugin_pb2.CodeGeneratorRequest, env: Environment | None = None
 ) -> plugin_pb2.CodeGeneratorResponse:
   """Generates code based on the CodeGeneratorRequest using Jinja2.
 
@@ -134,9 +132,7 @@ def generate_code(
   # If comma-separated values are needed within a single parameter,
   # a more robust parsing mechanism (e.g., with escaping) would be required.
   params = dict(
-      p.split('=', 1)
-      for p in request.parameter.split(',')
-      if '=' in p
+      p.split('=', 1) for p in request.parameter.split(',') if '=' in p
   )
 
   template_dir = params.get(
@@ -158,9 +154,30 @@ def generate_code(
     response.error = f'Failed to load template {template_name}: {error_msg}'
     return response
 
+  services_param = params.get('services')
+  registry_services = (
+      set(services_param.split(';')) if services_param else set()
+  )
+
+  def _get_fully_qualified_name(proto_file, svc):
+    if proto_file.package:
+      return f'{proto_file.package}.{svc.name}'
+    return svc.name
+
+  # Avoid O(n*m) complexity by converting the list to a set for lookup.
+  files_to_generate = set(request.file_to_generate)
+  ez_services_map = {}
+  for proto_file in request.proto_file:
+    ez_services_map[proto_file.name] = [
+        svc
+        for svc in proto_file.service
+        if _get_fully_qualified_name(proto_file, svc) in registry_services
+    ]
+
   context = {
-      'Files': request.proto_file,
+      'Files': [f for f in request.proto_file if f.name in files_to_generate],
       'Request': request,
+      'EzServices': ez_services_map,
   }
 
   try:

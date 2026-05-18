@@ -243,6 +243,30 @@ async fn test_rpc_handler_unary() {
 }
 
 #[tokio::test]
+async fn test_rpc_handler_unary_vec() {
+    let harness = TestHarness::start().await.expect("Test harness should start");
+
+    let rpc_handler = RpcHandler::new(
+        harness.client.clone(),
+        "test_operator_domain".to_string(),
+        "test_service_name".to_string(),
+        DataScopeType::UserPrivate,
+    );
+    let response = rpc_handler
+        .isolate_rpc_call_vec("test_method", vec![3, 1, 4, 1, 5, 9])
+        .await
+        .expect("Failed to invoke rpc call");
+
+    assert_eq!(response, vec![3, 1, 4, 1, 5, 9]);
+
+    assert_eq!(harness.mock_enforcer_server.unary_call_count(), 1);
+    assert_eq!(harness.mock_enforcer_server.stream_call_count(), 0);
+    assert_eq!(harness.mock_enforcer_server.stream_message_count(), 0);
+
+    harness.stop().await.expect("Test harness should stop");
+}
+
+#[tokio::test]
 async fn test_rpc_handler_stream() {
     let harness = TestHarness::start().await.expect("Test harness should start");
 

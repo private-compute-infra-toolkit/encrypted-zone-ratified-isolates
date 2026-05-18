@@ -38,9 +38,9 @@ use enforcer_proto::enforcer::v1::{
     PollIsolateStateRequest, PollIsolateStateResponse, PublishEventForRequest,
     PublishEventForResponse, StreamSubscribeToRequest, StreamSubscribeToResponse,
 };
-use payload_proto::enforcer::v1::EzPayloadData;
+use payload_proto::enforcer::v1::{ez_hybrid_payload, EzHybridPayload, EzPayloadData};
 use private_inference_service_proto::private_inference_service::{
-    GenerateContentRequest, GenerateContentResponse,
+    FeatureName, GenerateContentRequest, GenerateContentResponse,
 };
 use trusted_aratea_traffic_lib::trusted_aratea_traffic::TrustedArateaTrafficImpl;
 
@@ -70,17 +70,29 @@ impl IsolateEzBridge for MockIsolateEzBridgeServer {
         let payload = if let Some(meta) = &req.control_plane_metadata {
             if meta.destination_service_name == "PrivateInferenceService" {
                 if let Some(ref isolate_payload) = req.isolate_request_payload {
-                    if !isolate_payload.datagrams.is_empty() {
-                        let request_proto =
-                            GenerateContentRequest::decode(isolate_payload.datagrams[0].as_slice())
-                                .map_err(|e| tonic::Status::invalid_argument(e.to_string()))?;
+                    if let Some(ez_hybrid_payload::DeliveryMethod::InlineData(ref data)) =
+                        isolate_payload.delivery_method
+                    {
+                        if !data.datagrams.is_empty() {
+                            let request_proto =
+                                GenerateContentRequest::decode(data.datagrams[0].as_slice())
+                                    .map_err(|e| tonic::Status::invalid_argument(e.to_string()))?;
 
-                        let response_proto = GenerateContentResponse {
-                            opaque_field_1: format!("Echo: {}", request_proto.opaque_field_1)
-                                .into_bytes(),
-                        };
+                            let response_proto = GenerateContentResponse {
+                                opaque_field_1: format!("Echo: {}", request_proto.feature_name)
+                                    .into_bytes(),
+                            };
 
-                        Some(EzPayloadData { datagrams: vec![response_proto.encode_to_vec()] })
+                            Some(EzHybridPayload {
+                                delivery_method: Some(
+                                    ez_hybrid_payload::DeliveryMethod::InlineData(EzPayloadData {
+                                        datagrams: vec![response_proto.encode_to_vec()],
+                                    }),
+                                ),
+                            })
+                        } else {
+                            None
+                        }
                     } else {
                         None
                     }
@@ -215,15 +227,29 @@ async fn test_generate_content_forwarding() {
     let service = TrustedArateaTrafficImpl::new("forward.domain".to_string());
     service.set_client(harness.client.clone());
 
-    let req = Request::new(GenerateContentRequest {
-        opaque_field_1: 42,
-        opaque_field_2: b"test_payload".to_vec(),
-    });
+    // Test allowed Smart Trust features
+    for feature in [1100, 1101, 1199] {
+        let req = Request::new(GenerateContentRequest {
+            feature_name: feature,
+            opaque_field_2: b"test_payload".to_vec(),
+        });
+        let response = service.generate_content(req).await.unwrap();
+        assert_eq!(response.into_inner().opaque_field_1, format!("Echo: {}", feature).into_bytes());
+    }
 
-    let response = service.generate_content(req).await.unwrap();
-    let response_inner = response.into_inner();
-
-    assert_eq!(response_inner.opaque_field_1, b"Echo: 42".to_vec());
+    // Test disallowed or unknown features
+    for (feature_name, expected_err_msg) in [
+        (FeatureName::Unspecified as i32, "Only Smart Trust features are allowed"),
+        (999, "Unknown feature name"),
+    ] {
+        let req = Request::new(GenerateContentRequest {
+            feature_name,
+            opaque_field_2: b"test_payload".to_vec(),
+        });
+        let err = service.generate_content(req).await.unwrap_err();
+        assert_eq!(err.code(), tonic::Code::InvalidArgument);
+        assert!(err.message().contains(expected_err_msg));
+    }
 
     harness.stop().await.unwrap();
 }

@@ -112,6 +112,14 @@ python.toolchain(
     python_version = "3.13",
 )
 
+pip2 = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
+pip2.parse(
+    hub_name = "sdk-pypi",
+    python_version = "3.13",
+    requirements_lock = "@privacy-sandbox-ez-sdk//tools/plugin:requirements_lock.txt",
+)
+use_repo(pip2, "sdk-pypi")
+
 single_version_override(
     module_name = "grpc",
     patches = ["//:grpc_python_versions.patch"],

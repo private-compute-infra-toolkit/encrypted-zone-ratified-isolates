@@ -61,11 +61,28 @@ impl PrivateInferenceService for TrustedArateaTrafficImpl {
             )
         });
 
-        // TODO: Only forward Smart Trust features.
+        let request_proto = request.into_inner();
+        let feature_name = request_proto.feature_name;
+
+        match feature_name {
+            1100..=1199 => {}
+            0 => {
+                return Err(Status::invalid_argument(
+                    "Only Smart Trust features are allowed for forwarding. Got: Unspecified",
+                ));
+            }
+            _ => {
+                return Err(Status::invalid_argument(format!(
+                    "Unknown feature name: {}",
+                    feature_name
+                )));
+            }
+        }
+
         log::info!("Forwarding GenerateContent to: {}", self.forward_operator_domain);
 
         let forward_response = stub
-            .generate_content(Request::new(request.into_inner()))
+            .generate_content(Request::new(request_proto))
             .await
             .map_err(|e| Status::internal(format!("Failed to forward request: {}", e)))?;
 

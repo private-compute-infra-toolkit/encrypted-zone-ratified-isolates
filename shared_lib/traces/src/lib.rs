@@ -25,7 +25,11 @@ use opentelemetry_sdk::trace::{SdkTracerProvider, TraceError};
 use opentelemetry_sdk::Resource;
 use tracing_subscriber::{prelude::*, EnvFilter, Registry};
 
-async fn init_tracer(endpoint: &str, service_name: &str) -> Result<SdkTracerProvider, TraceError> {
+async fn init_tracer(
+    endpoint: &str,
+    service_name: &str,
+    sample_probability: f64,
+) -> Result<SdkTracerProvider, TraceError> {
     let mut exporter_builder = SpanExporter::builder().with_tonic();
 
     if endpoint.starts_with("unix:") {
@@ -48,8 +52,13 @@ async fn init_tracer(endpoint: &str, service_name: &str) -> Result<SdkTracerProv
 
     let resource = Resource::builder().with_service_name(service_name.to_string()).build();
 
-    let provider =
-        SdkTracerProvider::builder().with_batch_exporter(exporter).with_resource(resource).build();
+    let sampler = opentelemetry_sdk::trace::Sampler::TraceIdRatioBased(sample_probability);
+
+    let provider = SdkTracerProvider::builder()
+        .with_batch_exporter(exporter)
+        .with_resource(resource)
+        .with_sampler(opentelemetry_sdk::trace::Sampler::ParentBased(Box::new(sampler)))
+        .build();
 
     global::set_text_map_propagator(TraceContextPropagator::new());
     global::set_tracer_provider(provider.clone());
@@ -60,10 +69,11 @@ async fn init_tracer(endpoint: &str, service_name: &str) -> Result<SdkTracerProv
 pub async fn setup_telemetry(
     service_name: &str,
     endpoint: &Option<String>,
+    sample_probability: f64,
 ) -> anyhow::Result<SdkTracerProvider> {
     // 1. Initialize OpenTelemetry tracing IF an endpoint is provided.
     let (telemetry_layer, tracer_provider) = if let Some(endpoint) = endpoint {
-        let tracer_provider = init_tracer(endpoint, service_name).await?;
+        let tracer_provider = init_tracer(endpoint, service_name, sample_probability).await?;
         let tracer = tracer_provider.tracer(service_name.to_string());
         let filter = EnvFilter::new("debug,h2=info");
         let layer = tracing_opentelemetry::layer().with_tracer(tracer).with_filter(filter);

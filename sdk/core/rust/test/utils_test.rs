@@ -39,8 +39,9 @@ fn test_message_to_invoke_isolate_response() {
     assert_eq!(output_scope.datagram_iscopes[0].scope_type, scope as i32);
 
     // Verify payload
+    let output_hybrid = response.isolate_output.expect("should have output");
     let DeliveryMethod::InlineData(output_data) =
-        response.isolate_output.unwrap().delivery_method.unwrap()
+        output_hybrid.delivery_method.expect("should have delivery method")
     else {
         panic!("Expected InlineData");
     };
@@ -111,8 +112,9 @@ async fn test_message_stream_to_invoke_isolate_stream() {
 
     // Check first response
     let resp1 = &received_responses[0];
+    let output_hybrid = resp1.isolate_output.as_ref().expect("should have output");
     let DeliveryMethod::InlineData(output_data) =
-        response.isolate_output.unwrap().delivery_method.unwrap()
+        output_hybrid.delivery_method.as_ref().expect("should have delivery method")
     else {
         panic!("Expected InlineData");
     };

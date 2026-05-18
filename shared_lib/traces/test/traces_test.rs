@@ -27,11 +27,12 @@ async fn test_trace_export() {
     // Note: setup_telemetry sets the global tracing subscriber.
     // This means this test can only be run once per process and cannot run in parallel
     // with other tests that set the global subscriber.
-    let provider = setup_telemetry(&endpoint, &None).await.expect("Failed to setup telemetry");
+    let provider =
+        setup_telemetry("traces_test", &endpoint, 1.0).await.expect("Failed to setup telemetry");
 
     // 3. Generate Traces
     {
-        let _span = info_span!("test_span").entered();
+        let _span = info_span!("test_span");
         // Simulate some work
         tokio::time::sleep(Duration::from_millis(10)).await;
     }

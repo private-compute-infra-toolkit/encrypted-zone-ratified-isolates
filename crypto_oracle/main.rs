@@ -26,6 +26,13 @@ struct Args {
     /// OTel traces endpoint
     #[arg(long)]
     otel_traces_endpoint: Option<String>,
+    /// OTel traces sample ratio
+    #[arg(
+        long,
+        default_value_t = 1.0 / ((1_u32 << 17) as f64),
+        help = "Sampler probability for traces."
+    )]
+    traces_sample_ratio: f64,
 }
 
 #[tokio::main]
@@ -33,7 +40,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let args = Args::parse();
     env_logger::init();
 
-    let _otel_traces = traces::setup_telemetry("crypto_oracle", &args.otel_traces_endpoint).await?;
+    let _otel_traces = traces::setup_telemetry(
+        "crypto_oracle",
+        &args.otel_traces_endpoint,
+        args.traces_sample_ratio,
+    )
+    .await?;
 
     log::info!("Starting Crypto Oracle Ratified Isolate");
     let oracle = Arc::new(CryptoOracle::new());

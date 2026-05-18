@@ -22,7 +22,16 @@ declare -r PATH_PREFIX="$2"
 declare -r OUTPUT_BASE="$3"
 
 # List of known sub-repositories that are separate Bazel workspaces
-declare -r SUB_REPOS=("approver" "crypto_oracle" "noise_session_manager")
+declare -r SUB_REPOS=(
+  "anonymous_token_spender"
+  "approver"
+  "crypto_oracle"
+  "noise_session_manager"
+  "sdk"
+  "shared_lib"
+  "tls_session_manager"
+  "trusted_aratea_traffic"
+)
 
 # see https://bazel.build/run/scripts
 declare -r BAZEL_BUILD_FAILED_ERROR_CODE=1

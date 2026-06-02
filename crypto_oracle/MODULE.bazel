@@ -28,6 +28,12 @@ bazel_dep(name = "rules_python", version = "1.9.0")
 bazel_dep(name = "rules_rust", version = "0.63.0")
 bazel_dep(name = "rules_rust_prost", version = "0.63.0")
 bazel_dep(name = "toolchains_protoc", version = "0.5.0")
+bazel_dep(name = "boringssl", version = "0.20250415.0")
+bazel_dep(name = "sdk-patches", version = "0.0.0")
+local_path_override(
+    module_name = "sdk-patches",
+    path = "../sdk/patches",
+)
 
 # SDK from submodule
 bazel_dep(name = "privacy-sandbox-ez-sdk", version = "0.0.0")
@@ -102,10 +108,6 @@ crate.spec(
     version = "4.5.53",
 )
 crate.spec(
-    package = "env_logger",
-    version = "0.11.8",
-)
-crate.spec(
     package = "tink-core",
     version = "0.3.0",
 )
@@ -161,8 +163,3 @@ single_version_override(
 )
 
 local_repository = use_repo_rule("@bazel_tools//tools/build_defs/repo:local.bzl", "local_repository")
-
-local_repository(
-    name = "shared_lib",
-    path = "../shared_lib",
-)

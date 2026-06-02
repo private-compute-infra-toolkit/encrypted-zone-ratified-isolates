@@ -2,6 +2,51 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## 0.9.0 (2026-06-02)
+
+
+### Dependencies
+
+* **deps:** Update DevKit to release-3.7.0
+* **deps:** Update DevKit to release-3.8.0
+
+
+### Noise Session Manager
+
+* **noise:** Add metrics API
+* **noise:** Add metrics for noise
+* **noise:** Switch to OTel-style metric names
+
+
+### TLS Session Manager
+
+* **tsm:** declare service using SDK
+* **tsm:** Implement TLS handshake portion
+
+
+### Features
+
+* Add EzShmSlabPool wrapper to Rust SDK
+* **boringssl:** Extract BoringSSL patch to a separate module
+* Default env_logger to INFO level in all Ratified Isolates
+* **metrics:** Configure metrics for ratified isolates
+* Move env logger crate to SDK
+* Port Rust ShmSlabPool impl from enforcer
+* Read incoming unary InvokeEzResponses from shared memory
+* Read incoming unary InvokeIsolateRequests from shared memory
+* Set default UDS path for OTel metrics
+* Support streaming shared memory payloads for InvokeEzBridge
+* Support streaming shared memory payloads for InvokeIsolateBridge
+* Use encrypted_zone.ratified_isolate. metric prefix
+* Write outbound unary InvokeEzRequests to shared memory
+* Write outbound unary InvokeIsolateResponses to shared memory
+
+
+### Bug Fixes
+
+* have rust analzyer script use devkit
+* occasional certificate time skew failure in EZ Aratea
+
 ## 0.8.0 (2026-05-18)
 
 

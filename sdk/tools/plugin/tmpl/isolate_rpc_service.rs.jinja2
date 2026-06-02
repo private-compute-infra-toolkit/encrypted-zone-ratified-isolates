@@ -28,7 +28,7 @@ use enforcer_proto::enforcer::v1::InvokeIsolateResponse;
 use rust_core::{
     invoke_isolate_stream_to_message_stream, message_stream_to_invoke_isolate_stream,
     message_to_invoke_isolate_response, IsolateRpcService, GrpcRequestStream, GrpcResponseStream,
-    PinBoxInvokeIsolateResponseStream, PeekableInvokeIsolateRequestStream
+    PinBoxInvokeIsolateResponseStream, PeekableInvokeIsolateRequestStream, EzShmSlabPool
 };
 use trait_set::trait_set;
 
@@ -134,6 +134,7 @@ impl<T: {{service_name}}> IsolateRpcService for {{service_name}}IsolateRpcServic
         &self,
         method_name: &str,
         request_bytes: &[u8],
+        shm_pool: Option<&EzShmSlabPool>,
     ) -> Result<InvokeIsolateResponse, Status> {
         #[allow(clippy::match_single_binding)]
         match method_name {
@@ -146,7 +147,7 @@ impl<T: {{service_name}}> IsolateRpcService for {{service_name}}IsolateRpcServic
                 })?;
 
                 let response = self.service_impl.{{rpc.name | snakecase}}(Request::new(request)).await?.into_inner();
-                Ok(message_to_invoke_isolate_response(response, self.response_scope))
+                Ok(message_to_invoke_isolate_response(response, self.response_scope, shm_pool).await)
             }
             {%- endif %}
             {%- endfor %}
@@ -161,6 +162,7 @@ impl<T: {{service_name}}> IsolateRpcService for {{service_name}}IsolateRpcServic
     async fn streaming_rpc_handler(&self,
         method_name: &str,
         request_stream: Request<PeekableInvokeIsolateRequestStream>,
+        shm_pool: Option<EzShmSlabPool>,
     ) -> Result<Response<PinBoxInvokeIsolateResponseStream>, Status> {
         #[allow(clippy::match_single_binding)]
         match method_name {
@@ -168,7 +170,7 @@ impl<T: {{service_name}}> IsolateRpcService for {{service_name}}IsolateRpcServic
             {%- if rpc.client_streaming and rpc.server_streaming %}
             {%- set req_type = rpc.input_type.split('.')[-1] %}
             "{{rpc.name}}" => {
-                let mapped_stream = invoke_isolate_stream_to_message_stream::<{{req_type}}>(request_stream);
+                let mapped_stream = invoke_isolate_stream_to_message_stream::<{{req_type}}>(request_stream, shm_pool.clone());
                 match self.service_impl.{{rpc.name | snakecase}}(Request::new(mapped_stream)).await {
                     Ok(response) => {
                         Ok(Response::new(message_stream_to_invoke_isolate_stream(Box::pin(response.into_inner()), self.response_scope)))

@@ -3,8 +3,7 @@
     "registry": {
       "host": "",
       "project": "",
-      "repository": "",
-      "namespace": "private-compute-infra-toolkit/encrypted-zone-ratified-isolates"
+      "repository": ""
     },
     "images": {
       "tool-env": {

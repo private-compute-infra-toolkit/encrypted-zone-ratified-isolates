@@ -33,19 +33,31 @@ struct Args {
         help = "Sampler probability for traces."
     )]
     traces_sample_ratio: f64,
+
+    /// OTel metrics endpoint
+    #[arg(long, default_value = "unix:///enforcer-isolate-shared/otlp-metrics.sock")]
+    otel_metrics_endpoint: String,
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // Initializes the logger. It will check the `RUST_LOG` environment
+    // variable first. If it's missing, it defaults to the "info" level.
+    env_logger::init_from_env(env_logger::Env::default().default_filter_or("info"));
     let args = Args::parse();
-    env_logger::init();
 
-    let _otel_traces = traces::setup_telemetry(
+    let _otel_traces = crypto_oracle_sdk::traces::setup_traces(
         "crypto_oracle",
         &args.otel_traces_endpoint,
         args.traces_sample_ratio,
     )
     .await?;
+
+    crypto_oracle_sdk::telemetry::metrics::setup_metrics(
+        "crypto_oracle",
+        Some(args.otel_metrics_endpoint),
+    )
+    .await;
 
     log::info!("Starting Crypto Oracle Ratified Isolate");
     let oracle = Arc::new(CryptoOracle::new());

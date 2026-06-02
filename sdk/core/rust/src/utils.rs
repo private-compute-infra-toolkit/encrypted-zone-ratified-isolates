@@ -12,18 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::shm_slab_pool::EzShmSlabPool;
 use enforcer_proto::data_scope_proto::enforcer::v1::DataScopeType;
 use enforcer_proto::enforcer::v1::{
     EzPayloadIsolateScope, InvokeIsolateRequest, InvokeIsolateResponse, IsolateDataScope,
 };
-use futures::Stream;
+use futures::{Stream, StreamExt};
 use payload_proto::enforcer::v1::{
     ez_hybrid_payload::DeliveryMethod, EzHybridPayload, EzPayloadData,
 };
 use prost::Message;
 use std::pin::Pin;
 use tokio_stream::adapters::Peekable;
-use tokio_stream::StreamExt;
 use tonic::{Request, Status, Streaming};
 use trait_set::trait_set;
 
@@ -47,6 +47,60 @@ pub type PinBoxGrpcResponseStream<T: Message> = Pin<Box<dyn GrpcResponseStream<T
 pub type PinBoxInvokeIsolateResponseStream = Pin<Box<dyn InvokeIsolateResponseStream>>;
 pub type PeekableInvokeIsolateRequestStream = Peekable<Streaming<InvokeIsolateRequest>>;
 
+/// Converts a raw payload byte slice into an `InvokeIsolateResponse`.
+///
+/// This function wraps the provided byte slice in an `InvokeIsolateResponse`. It attempts to use
+/// shared memory (`EzShmSlabPool`) for delivery if `shm_pool` is provided and the payload size
+/// exceeds the configured threshold. Otherwise, the payload is sent inline.
+///
+/// # Arguments
+///
+/// * `message_bytes` - The raw payload bytes to include in the response.
+/// * `response_scope` - The data scope to assign to the response.
+/// * `shm_pool` - Optional shared memory slab pool for processing shared memory payloads
+///
+/// # Returns
+///
+/// Returns an `InvokeIsolateResponse` containing the payload bytes.
+pub async fn payload_bytes_to_invoke_isolate_response(
+    message_bytes: Vec<u8>,
+    response_scope: DataScopeType,
+    shm_pool: Option<&EzShmSlabPool>,
+) -> InvokeIsolateResponse {
+    let delivery_method = if let Some(shm_pool) = shm_pool {
+        if message_bytes.len() > shm_pool.shm_payload_threshold {
+            match shm_pool.write_to_enforcer(&message_bytes).await {
+                Ok(slots) => {
+                    Some(DeliveryMethod::ShmData(payload_proto::enforcer::v1::ShmSlotData {
+                        slots,
+                    }))
+                }
+                Err(err) => {
+                    log::error!("Failed to write large payload to shared memory: {:?}. Falling back to InlineData.", err);
+                    Some(DeliveryMethod::InlineData(EzPayloadData {
+                        datagrams: vec![message_bytes],
+                    }))
+                }
+            }
+        } else {
+            Some(DeliveryMethod::InlineData(EzPayloadData { datagrams: vec![message_bytes] }))
+        }
+    } else {
+        Some(DeliveryMethod::InlineData(EzPayloadData { datagrams: vec![message_bytes] }))
+    };
+
+    InvokeIsolateResponse {
+        control_plane_metadata: Default::default(),
+        isolate_output_iscope: Some(EzPayloadIsolateScope {
+            datagram_iscopes: vec![IsolateDataScope {
+                scope_type: response_scope as i32,
+                ..Default::default()
+            }],
+        }),
+        isolate_output: Some(EzHybridPayload { delivery_method }),
+    }
+}
+
 /// Wraps a generic Protobuf message into an `InvokeIsolateResponse`.
 ///
 /// This function serializes the message and sets the appropriate isolation scope metadata.
@@ -59,24 +113,13 @@ pub type PeekableInvokeIsolateRequestStream = Peekable<Streaming<InvokeIsolateRe
 /// # Returns
 ///
 /// Returns an `InvokeIsolateResponse` containing the serialized message.
-pub fn message_to_invoke_isolate_response<T: Message>(
+pub async fn message_to_invoke_isolate_response<T: Message>(
     message: T,
     response_scope: DataScopeType,
+    shm_pool: Option<&EzShmSlabPool>,
 ) -> InvokeIsolateResponse {
-    InvokeIsolateResponse {
-        control_plane_metadata: Default::default(),
-        isolate_output_iscope: Some(EzPayloadIsolateScope {
-            datagram_iscopes: vec![IsolateDataScope {
-                scope_type: response_scope as i32,
-                ..Default::default()
-            }],
-        }),
-        isolate_output: Some(EzHybridPayload {
-            delivery_method: Some(DeliveryMethod::InlineData(EzPayloadData {
-                datagrams: vec![message.encode_to_vec()],
-            })),
-        }),
-    }
+    payload_bytes_to_invoke_isolate_response(message.encode_to_vec(), response_scope, shm_pool)
+        .await
 }
 
 /// Converts a raw `InvokeIsolateRequest` stream into a typed message stream.
@@ -86,31 +129,45 @@ pub fn message_to_invoke_isolate_response<T: Message>(
 ///
 /// # Arguments
 ///
-/// * `request_stream` - The raw gRPC request stream.
+/// * `request_stream` - The gRPC request stream.
 ///
 /// # Returns
 ///
 /// Returns a pinned, boxed stream of `Result<T, Status>`.
 pub fn invoke_isolate_stream_to_message_stream<T: Message + Default>(
     request_stream: Request<impl InvokeIsolateRequestStream>,
+    shm_pool: Option<EzShmSlabPool>,
 ) -> PinBoxGrpcResponseStream<T> {
-    let mapped_stream = request_stream.into_inner().map(|req_result| {
+    let mapped_stream = request_stream.into_inner().map(move |req_result| {
         let req = req_result?;
         // TODO: Support all datagram bytes in the payload.
-        let request_bytes = match req
-            .isolate_input
-            .and_then(|i| i.delivery_method)
-            .and_then(|dm| match dm {
-                DeliveryMethod::InlineData(data) => Some(data),
-                _ => None,
-            })
-            .and_then(|i| i.datagrams.into_iter().next())
-        {
+        let request_bytes = match req.isolate_input.and_then(|i| i.delivery_method) {
+            Some(DeliveryMethod::InlineData(data)) => data.datagrams.into_iter().next(),
+            Some(DeliveryMethod::ShmData(shm_data)) => {
+                if let Some(shm_pool) = &shm_pool {
+                    match shm_pool.read_from_enforcer(&shm_data.slots) {
+                        Ok(payload_bytes) => Some(payload_bytes),
+                        Err(err) => {
+                            return Err(Status::internal(format!(
+                                "Failed to read from shared memory pool: {:?}",
+                                err
+                            )));
+                        }
+                    }
+                } else {
+                    return Err(Status::internal(
+                        "Received ShmData request but EzShmSlabPool is not initialized",
+                    ));
+                }
+            }
+            None => {
+                return Err(Status::invalid_argument("FATAL: Should not reach here"));
+            }
+        };
+        let request_bytes = match request_bytes {
             Some(d) => d,
             None => {
-                return Err(Status::invalid_argument(
-                    "Missing or unsupported delivery method in request payload",
-                ));
+                return Err(Status::invalid_argument("Missing datagrams in payload"));
             }
         };
         T::decode(request_bytes.as_slice()).map_err(|e| Status::internal(e.to_string()))
@@ -131,13 +188,27 @@ pub fn invoke_isolate_stream_to_message_stream<T: Message + Default>(
 /// # Returns
 ///
 /// Returns a pinned, boxed stream of `Result<InvokeIsolateResponse, Status>`.
-pub fn message_stream_to_invoke_isolate_stream<T: Message>(
+pub fn message_stream_to_invoke_isolate_stream<T: Message + 'static>(
     message_stream: impl GrpcRequestStream<T>,
     request_scope: DataScopeType,
 ) -> PinBoxInvokeIsolateResponseStream {
-    let mapped_stream = message_stream.map(move |message_result| {
+    let mapped_stream = message_stream.then(move |message_result| async move {
         let message = message_result?;
-        Ok(message_to_invoke_isolate_response(message, request_scope))
+        let bytes = message.encode_to_vec();
+        Ok(InvokeIsolateResponse {
+            control_plane_metadata: Default::default(),
+            isolate_output_iscope: Some(EzPayloadIsolateScope {
+                datagram_iscopes: vec![IsolateDataScope {
+                    scope_type: request_scope as i32,
+                    ..Default::default()
+                }],
+            }),
+            isolate_output: Some(EzHybridPayload {
+                delivery_method: Some(DeliveryMethod::InlineData(EzPayloadData {
+                    datagrams: vec![bytes],
+                })),
+            }),
+        })
     });
     Box::pin(mapped_stream)
 }

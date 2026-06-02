@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use crate::isolate_ez_bridge_client::IsolateEzBridgeSdkClient;
+use crate::shm_slab_pool::EzShmSlabPool;
 use crate::{GrpcClientRequestStream, PinBoxGrpcResponseStream};
 use enforcer_proto::data_scope_proto::enforcer::v1::DataScopeType;
 use enforcer_proto::enforcer::v1::{
@@ -20,7 +21,7 @@ use enforcer_proto::enforcer::v1::{
     IsolateDataScope,
 };
 use payload_proto::enforcer::v1::{
-    ez_hybrid_payload::DeliveryMethod, EzHybridPayload, EzPayloadData,
+    ez_hybrid_payload::DeliveryMethod, EzHybridPayload, EzPayloadData, ShmSlotData,
 };
 use prost::Message;
 use std::sync::Arc;
@@ -38,7 +39,7 @@ pub struct RpcHandler {
     operator_domain: String,
     service_name: String,
     request_scope: DataScopeType,
-    // TODO: Add shared memory management.
+    shm_pool: Option<EzShmSlabPool>,
 }
 
 impl RpcHandler {
@@ -56,15 +57,36 @@ impl RpcHandler {
         service_name: String,
         request_scope: DataScopeType,
     ) -> Self {
-        Self { client, operator_domain, service_name, request_scope }
+        let shm_pool = EzShmSlabPool::new()
+            .inspect_err(|e| {
+                log::error!(
+                    "Failed to create shared memory pool; will fallback to default IPC: {:?}",
+                    e
+                )
+            })
+            .ok();
+        Self { client, operator_domain, service_name, request_scope, shm_pool }
     }
 
-    fn create_invoke_ez_request(
+    async fn create_invoke_ez_request(
         &self,
         ipc_message_id: u64,
         method_name: String,
         request_bytes: Vec<u8>,
     ) -> InvokeEzRequest {
+        let mut delivery_method = None;
+        if let Some(shm_pool) = &self.shm_pool {
+            if request_bytes.len() > shm_pool.shm_payload_threshold {
+                if let Ok(out_slots) = shm_pool.write_to_enforcer(&request_bytes).await {
+                    delivery_method =
+                        Some(DeliveryMethod::ShmData(ShmSlotData { slots: out_slots }));
+                }
+            }
+        };
+        if delivery_method.is_none() {
+            delivery_method =
+                Some(DeliveryMethod::InlineData(EzPayloadData { datagrams: vec![request_bytes] }));
+        };
         InvokeEzRequest {
             control_plane_metadata: Some(ControlPlaneMetadata {
                 ipc_message_id,
@@ -80,11 +102,7 @@ impl RpcHandler {
                     ..Default::default()
                 }],
             }),
-            isolate_request_payload: Some(EzHybridPayload {
-                delivery_method: Some(DeliveryMethod::InlineData(EzPayloadData {
-                    datagrams: vec![request_bytes],
-                })),
-            }),
+            isolate_request_payload: Some(EzHybridPayload { delivery_method }),
         }
     }
 }
@@ -115,7 +133,7 @@ impl RpcHandler {
     ) -> Result<U, Status> {
         let request_bytes = request.encode_to_vec();
         let response = self.isolate_rpc_call_helper(method_name, request_bytes).await?;
-        decode_invoke_ez_response(&response)
+        decode_invoke_ez_response(self.shm_pool.as_ref(), &response)
     }
 
     /// Performs a unary RPC call to the isolate, using Vec<u8>.
@@ -136,7 +154,7 @@ impl RpcHandler {
         request: Vec<u8>,
     ) -> Result<Vec<u8>, Status> {
         let response = self.isolate_rpc_call_helper(method_name, request).await?;
-        extract_invoke_ez_response(&response).cloned()
+        extract_invoke_ez_response(self.shm_pool.as_ref(), &response)
     }
 
     /// Helper to avoid cloning / ownership differences between vec / non-vec
@@ -147,8 +165,9 @@ impl RpcHandler {
     ) -> Result<InvokeEzResponse, Status> {
         let ipc_message_id = rand::random::<u64>();
 
-        let request =
-            self.create_invoke_ez_request(ipc_message_id, method_name.to_string(), request_bytes);
+        let request = self
+            .create_invoke_ez_request(ipc_message_id, method_name.to_string(), request_bytes)
+            .await;
 
         let response = self.client.invoke_ez(request).await?;
 
@@ -194,42 +213,59 @@ impl RpcHandler {
         let method_name = method_name.to_string();
         let ipc_message_id = rand::random::<u64>();
 
-        let invoke_ez_stream = request_stream.into_inner().map(move |req| {
+        let invoke_ez_stream = request_stream.into_inner().then(move |req| {
+            let this = this.clone();
+            let method_name = method_name.clone();
             let request_bytes = req.encode_to_vec();
-            this.create_invoke_ez_request(ipc_message_id, method_name.clone(), request_bytes)
+            async move {
+                this.create_invoke_ez_request(ipc_message_id, method_name, request_bytes).await
+            }
         });
 
         let response_stream = self.client.stream_invoke_ez(invoke_ez_stream).await?;
-        let mapped_response_stream = response_stream.map(|res| {
+        let shm_pool = self.shm_pool.clone();
+        let mapped_response_stream = response_stream.map(move |res| {
             let response = res?;
-            decode_invoke_ez_response(&response)
+            decode_invoke_ez_response(shm_pool.as_ref(), &response)
         });
 
         Ok(Response::new(Box::pin(mapped_response_stream)))
     }
 }
 
-fn extract_invoke_ez_response(response: &InvokeEzResponse) -> Result<&Vec<u8>, Status> {
-    // TODO: Handle shared memory handles.
-    response
+fn extract_invoke_ez_response(
+    shm_pool: Option<&EzShmSlabPool>,
+    response: &InvokeEzResponse,
+) -> Result<Vec<u8>, Status> {
+    let payload = response
         .ez_response_payload
         .as_ref()
-        .and_then(|p| p.delivery_method.as_ref())
-        .and_then(|dm| match dm {
-            DeliveryMethod::InlineData(data) => Some(data),
-            _ => None,
-        })
-        .and_then(|p| p.datagrams.first())
-        .ok_or_else(|| {
-            log::error!("Missing or unsupported response payload");
-            Status::internal("Missing or unsupported response payload")
-        })
+        .ok_or_else(|| Status::invalid_argument("Missing ez_response_payload"))?;
+
+    match payload.delivery_method.as_ref() {
+        Some(DeliveryMethod::InlineData(data)) => data
+            .datagrams
+            .first()
+            .cloned()
+            .ok_or_else(|| Status::invalid_argument("Missing inline datagram bytes")),
+        Some(DeliveryMethod::ShmData(shm_data)) => {
+            if let Some(shm_pool) = shm_pool {
+                shm_pool.read_from_enforcer(&shm_data.slots).map_err(|err| {
+                    Status::internal(format!("Failed to read from shared memory: {:?}", err))
+                })
+            } else {
+                Err(Status::internal("Received ShmData but EzShmSlabPool is not initialized"))
+            }
+        }
+        _ => Err(Status::invalid_argument("Missing delivery method in response")),
+    }
 }
 
 fn decode_invoke_ez_response<U: Message + Default>(
+    shm_pool: Option<&EzShmSlabPool>,
     response: &InvokeEzResponse,
 ) -> Result<U, Status> {
-    let response_bytes = extract_invoke_ez_response(response)?;
+    let response_bytes = extract_invoke_ez_response(shm_pool, response)?;
     U::decode(response_bytes.as_slice()).map_err(|e| {
         log::error!("Failed to decode response: {:?}", e);
         Status::internal(e.to_string())

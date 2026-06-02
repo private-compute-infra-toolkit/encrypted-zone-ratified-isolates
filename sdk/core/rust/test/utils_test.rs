@@ -21,17 +21,19 @@ use prost::Message;
 use rust_core::{
     invoke_isolate_stream_to_message_stream, message_stream_to_invoke_isolate_stream,
     message_to_invoke_isolate_response,
+    shm_slab_pool::{ShmSlabPool, ShmSlabPoolOptions},
+    EzShmSlabPool,
 };
 use test_message_proto::test_message::TestMessage;
 use tokio_stream::StreamExt;
 use tonic::Request;
 
-#[test]
-fn test_message_to_invoke_isolate_response() {
+#[tokio::test]
+async fn test_message_to_invoke_isolate_response() {
     let message = TestMessage { field1: "hello".to_string(), field2: "world".to_string() };
     let scope = DataScopeType::UserPrivate;
 
-    let response = message_to_invoke_isolate_response(message.clone(), scope);
+    let response = message_to_invoke_isolate_response(message.clone(), scope, None).await;
 
     // Verify scope
     let output_scope = response.isolate_output_iscope.expect("should have scope");
@@ -72,7 +74,8 @@ async fn test_invoke_isolate_stream_to_message_stream() {
 
     let request_stream = Request::new(tokio_stream::iter(invoke_requests));
 
-    let mut message_stream = invoke_isolate_stream_to_message_stream::<TestMessage>(request_stream);
+    let mut message_stream =
+        invoke_isolate_stream_to_message_stream::<TestMessage>(request_stream, None);
 
     let mut received_messages = Vec::new();
     while let Some(msg_result) = message_stream.next().await {
@@ -91,14 +94,6 @@ async fn test_message_stream_to_invoke_isolate_stream() {
 
     let messages = vec![Ok(message1.clone()), Ok(message2.clone())];
     let message_stream = tokio_stream::iter(messages);
-    // We need to map to Result<T, Status> explicitly if not already, but our vec is Result<T, Status>
-    // Actually, `message_stream` needs to be valid GrpcRequestStream<T>.
-    // GrpcRequestStream<T> = Stream<Item = Result<T, Status>> + Send + Unpin + 'static.
-    // tokio_stream::iter returns a stream that is Unpin.
-
-    // Explicitly annotate type for stream to satisfy trait bounds if needed, or let inference work.
-    // But `tokio_stream::iter` produces an iterator stream.
-    // We need to type inference to work for `impl GrpcRequestStream<T>`.
 
     let scope = DataScopeType::UserPrivate;
     let mut response_stream = message_stream_to_invoke_isolate_stream(message_stream, scope);
@@ -132,9 +127,78 @@ async fn test_invoke_isolate_stream_to_message_stream_error() {
     let invoke_requests = vec![Ok(InvokeIsolateRequest::default())];
     let request_stream = Request::new(tokio_stream::iter(invoke_requests));
 
-    let mut message_stream = invoke_isolate_stream_to_message_stream::<TestMessage>(request_stream);
+    let mut message_stream =
+        invoke_isolate_stream_to_message_stream::<TestMessage>(request_stream, None);
 
     let result = message_stream.next().await.unwrap();
     assert!(result.is_err());
     assert_eq!(result.unwrap_err().code(), tonic::Code::InvalidArgument);
+}
+
+#[tokio::test]
+async fn test_message_to_invoke_isolate_response_with_shm() {
+    let dir = tempfile::tempdir().unwrap();
+    let enforcer_path = dir.path().join("enforcer_writes").to_string_lossy().to_string();
+    let isolate_path = dir.path().join("isolate_writes").to_string_lossy().to_string();
+
+    let num_slots = 64;
+    let block_size = 1024;
+
+    let _enforcer_mock = ShmSlabPool::new(ShmSlabPoolOptions {
+        file_name: enforcer_path.clone(),
+        number_of_slots: num_slots,
+        slot_size: block_size,
+        writer: true,
+        create: true,
+    })
+    .unwrap();
+
+    let _isolate_mock = ShmSlabPool::new(ShmSlabPoolOptions {
+        file_name: isolate_path.clone(),
+        number_of_slots: num_slots,
+        slot_size: block_size,
+        writer: true,
+        create: true,
+    })
+    .unwrap();
+
+    // Setup environment variables for EzShmSlabPool
+    std::env::set_var("EZ_SHM_NUM_SLOTS", num_slots.to_string());
+    std::env::set_var("EZ_SHM_SLOT_SIZE", block_size.to_string());
+    std::env::set_var("EZ_SHM_ENFORCER_WRITES_PATH", enforcer_path);
+    std::env::set_var("EZ_SHM_ISOLATE_WRITES_PATH", isolate_path.clone());
+
+    // Set threshold to 10 bytes so our message triggers shared memory
+    std::env::set_var("EZ_SHM_THRESHOLD", "10");
+    std::env::set_var("EZ_SHM_PAYLOAD_THRESHOLD", "10");
+    let shm_pool = EzShmSlabPool::new().unwrap();
+    let message = TestMessage { field1: "hello".to_string(), field2: "world".to_string() };
+    let scope = DataScopeType::UserPrivate;
+
+    let response =
+        message_to_invoke_isolate_response(message.clone(), scope, Some(&shm_pool)).await;
+
+    // Verify it uses ShmData delivery method
+    let output_hybrid = response.isolate_output.expect("should have output");
+    let DeliveryMethod::ShmData(shm_data) =
+        output_hybrid.delivery_method.expect("should have delivery method")
+    else {
+        panic!("Expected ShmData");
+    };
+
+    assert!(!shm_data.slots.is_empty());
+
+    // Read it back using _isolate_mock
+    let read_bytes = _isolate_mock.read_from_pool(&shm_data.slots).unwrap();
+    let decoded = TestMessage::decode(read_bytes.as_slice()).unwrap();
+    assert_eq!(decoded.field1, message.field1);
+    assert_eq!(decoded.field2, message.field2);
+
+    // Clean up environment variables
+    std::env::remove_var("EZ_SHM_NUM_SLOTS");
+    std::env::remove_var("EZ_SHM_SLOT_SIZE");
+    std::env::remove_var("EZ_SHM_ENFORCER_WRITES_PATH");
+    std::env::remove_var("EZ_SHM_ISOLATE_WRITES_PATH");
+    std::env::remove_var("EZ_SHM_THRESHOLD");
+    std::env::remove_var("EZ_SHM_PAYLOAD_THRESHOLD");
 }

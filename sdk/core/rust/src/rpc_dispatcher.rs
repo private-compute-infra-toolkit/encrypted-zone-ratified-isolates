@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::shm_slab_pool::EzShmSlabPool;
 use crate::{PeekableInvokeIsolateRequestStream, PinBoxInvokeIsolateResponseStream};
 use async_stream::stream;
 use derivative::Derivative;
@@ -20,6 +21,7 @@ use enforcer_proto::enforcer::v1::{
     ControlPlaneMetadata, InvokeIsolateRequest, InvokeIsolateResponse, IsolateState,
     UpdateIsolateStateRequest, UpdateIsolateStateResponse,
 };
+use payload_proto::enforcer::v1::ez_hybrid_payload::DeliveryMethod;
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::atomic::{AtomicI32, Ordering};
@@ -40,6 +42,7 @@ pub trait IsolateRpcService: Send + Sync + 'static {
     ///
     /// * `method_name` - The name of the method to invoke.
     /// * `request_bytes` - The serialized request payload.
+    /// * `shm_pool` - Optional shared memory slab pool for processing shared memory payloads
     ///
     /// # Returns
     ///
@@ -48,6 +51,7 @@ pub trait IsolateRpcService: Send + Sync + 'static {
         &self,
         method_name: &str,
         request_bytes: &[u8],
+        shm_pool: Option<&EzShmSlabPool>,
     ) -> Result<InvokeIsolateResponse, Status>;
 
     /// Handles an incoming streaming RPC call.
@@ -64,6 +68,7 @@ pub trait IsolateRpcService: Send + Sync + 'static {
         &self,
         method_name: &str,
         request_stream: Request<PeekableInvokeIsolateRequestStream>,
+        shm_pool: Option<EzShmSlabPool>,
     ) -> Result<Response<PinBoxInvokeIsolateResponseStream>, Status>;
 
     /// Returns the gRPC service name.
@@ -89,6 +94,8 @@ pub struct RpcDispatcher {
     service_map: Arc<RwLock<HashMap<String, Arc<dyn IsolateRpcService>>>>,
     #[derivative(Default(value = "Arc::new(AtomicI32::new(IsolateState::Ready as i32))"))]
     current_state: Arc<AtomicI32>,
+    #[derivative(Default(value = "None"))]
+    ez_shm_slab_pool: Option<EzShmSlabPool>,
 }
 
 impl RpcDispatcher {
@@ -100,11 +107,21 @@ impl RpcDispatcher {
     pub fn new(initial_service: Arc<dyn IsolateRpcService>) -> Self {
         let mut service_map = HashMap::new();
         service_map.insert(initial_service.service_name().to_string(), initial_service);
+        let ez_shm_slab_pool = match EzShmSlabPool::new() {
+            Ok(shm_pool) => Some(shm_pool),
+            Err(e) => {
+                log::error!(
+                    "Failed to create shared memory pool: {e:#?}; will fallback to default IPC"
+                );
+                None
+            }
+        };
         Self {
             service_map: Arc::new(RwLock::new(service_map)),
             // Have this start at Ready since the Isolate already notified the Enforcer
             // that it is Ready before the dispatcher is used.
             current_state: Arc::new(AtomicI32::new(IsolateState::Ready as i32)),
+            ez_shm_slab_pool,
         }
     }
 
@@ -179,26 +196,28 @@ impl EzIsolateBridge for RpcDispatcher {
         );
 
         // TODO: Support all datagram bytes in the payload.
-        let request_bytes = match req
-            .isolate_input
-            .and_then(|i| i.delivery_method)
-            .and_then(|dm| match dm {
-                payload_proto::enforcer::v1::ez_hybrid_payload::DeliveryMethod::InlineData(
-                    data,
-                ) => Some(data),
-                _ => None,
-            })
-            .and_then(|i| i.datagrams.into_iter().next())
-        {
-            Some(d) => d,
-            None => {
-                return Err(Status::invalid_argument(
-                    "Missing or unsupported delivery method in request payload",
-                ));
+        let request_bytes = match req.isolate_input.and_then(|i| i.delivery_method) {
+            Some(DeliveryMethod::InlineData(data)) => data
+                .datagrams
+                .into_iter()
+                .next()
+                .ok_or_else(|| Status::invalid_argument("Missing datagrams in payload")),
+            Some(DeliveryMethod::ShmData(shm_data)) => {
+                let shm_pool = self.ez_shm_slab_pool.as_ref().ok_or_else(|| {
+                    Status::internal("Received ShmData but EzShmSlabPool is not initialized")
+                })?;
+                shm_pool.read_from_enforcer(&shm_data.slots).map_err(|err| {
+                    Status::internal(format!("Failed to read from shared memory pool: {:?}", err))
+                })
             }
-        };
+            None => Err(Status::invalid_argument(
+                "Missing or unsupported delivery method in request payload",
+            )),
+        }?;
 
-        let mut response = service.unary_rpc_handler(method_name, &request_bytes).await?;
+        let mut response = service
+            .unary_rpc_handler(method_name, &request_bytes, self.ez_shm_slab_pool.as_ref())
+            .await?;
         let metadata = response.control_plane_metadata.get_or_insert_with(Default::default);
         metadata.ipc_message_id = ipc_message_id;
         metadata.responder_is_local = true;
@@ -250,7 +269,11 @@ impl EzIsolateBridge for RpcDispatcher {
           // passed to the handler if the Peekable internal buffer is discarded.
           // However, we now pass the peekable stream itself (wrapped in Request), so no data is lost.
           let response_stream = service
-                .streaming_rpc_handler(method_name, Request::new(peekable_stream))
+                .streaming_rpc_handler(
+                    method_name,
+                    Request::new(peekable_stream),
+                    this.ez_shm_slab_pool.clone(),
+                )
                 .await?
                 .into_inner();
           // `response_stream` is not `Unpin` because we removed the `Unpin` bound from the

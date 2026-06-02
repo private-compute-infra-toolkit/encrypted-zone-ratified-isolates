@@ -100,11 +100,11 @@ rust_binary(
         ":crypto_oracle",
         "//v1:crypto_oracle_rust",
         "//v1:crypto_oracle_service",
+        "@crates//:env_logger",
         "@crates//:log",
         "@crates//:tokio",
         "@oracle_crates//:clap",
-        "@oracle_crates//:env_logger",
-        "@shared_lib//traces",
+        "@privacy-sandbox-ez-sdk//core/rust:core",
     ],
 )
 

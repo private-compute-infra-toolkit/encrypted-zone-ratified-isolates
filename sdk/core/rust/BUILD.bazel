@@ -16,7 +16,7 @@ load("@rules_rust//rust:defs.bzl", "rust_library", "rust_proc_macro", "rust_test
 
 rust_library(
     name = "core",
-    srcs = glob(["src/*.rs"]),
+    srcs = glob(["src/**/*.rs"]),
     crate_name = "rust_core",
     proc_macro_deps = [
         "@crates//:derivative",
@@ -28,19 +28,27 @@ rust_library(
         "//enforcer/v1:payload_rust",
         "@crates//:anyhow",
         "@crates//:async-stream",
+        "@crates//:boring",
         "@crates//:futures",
         "@crates//:hyper-util",
         "@crates//:log",
+        "@crates//:memmap2",
         "@crates//:once_cell",
         "@crates//:opentelemetry",
         "@crates//:opentelemetry-otlp",
         "@crates//:opentelemetry_sdk",
         "@crates//:prost",
         "@crates//:rand",
+        "@crates//:thiserror",
         "@crates//:tokio",
+        "@crates//:tokio-boring",
+        "@crates//:tokio-retry",
         "@crates//:tokio-stream",
         "@crates//:tonic",
         "@crates//:tower",
+        "@crates//:tracing",
+        "@crates//:tracing-opentelemetry",
+        "@crates//:tracing-subscriber",
     ],
 )
 
@@ -64,6 +72,7 @@ rust_library(
     proc_macro_deps = [
         "@crates//:derivative",
     ],
+    visibility = ["//visibility:public"],
     deps = [
         ":core",
         "//enforcer/v1:enforcer_rust",
@@ -71,6 +80,7 @@ rust_library(
         "@crates//:anyhow",
         "@crates//:futures",
         "@crates//:hyper-util",
+        "@crates//:log",
         "@crates//:tokio",
         "@crates//:tokio-stream",
         "@crates//:tonic",
@@ -100,9 +110,37 @@ rust_test(
         "@crates//:futures",
         "@crates//:nix",
         "@crates//:once_cell",
+        "@crates//:tempfile",
         "@crates//:tokio",
         "@crates//:tokio-stream",
         "@crates//:tonic",
+    ],
+)
+
+rust_test(
+    name = "traces_test",
+    size = "small",
+    srcs = ["test/telemetry/traces_test.rs"],
+    args = ["--test-threads=1"],
+    deps = [
+        ":core",
+        "@crates//:fake-opentelemetry-collector",
+        "@crates//:tokio",
+        "@crates//:tracing",
+    ],
+)
+
+rust_test(
+    name = "traces_uds_test",
+    size = "small",
+    srcs = ["test/telemetry/traces_uds_test.rs"],
+    args = ["--test-threads=1"],
+    deps = [
+        ":core",
+        "@crates//:fake-opentelemetry-collector",
+        "@crates//:tempfile",
+        "@crates//:tokio",
+        "@crates//:tracing",
     ],
 )
 
@@ -127,6 +165,8 @@ rust_test(
         "@crates//:futures",
         "@crates//:nix",
         "@crates//:once_cell",
+        "@crates//:prost",
+        "@crates//:tempfile",
         "@crates//:tokio",
         "@crates//:tokio-stream",
         "@crates//:tonic",
@@ -143,8 +183,24 @@ rust_test(
         "//enforcer/v1:enforcer_rust",
         "//enforcer/v1:payload_rust",
         "@crates//:prost",
+        "@crates//:tempfile",
         "@crates//:tokio",
         "@crates//:tokio-stream",
         "@crates//:tonic",
+    ],
+)
+
+rust_test(
+    name = "shm_slab_pool_test",
+    size = "small",
+    srcs = ["test/shm_slab_pool_test.rs"],
+    # Add this line to enforce sequential execution
+    args = ["--test-threads=1"],
+    tags = ["exclusive"],
+    deps = [
+        ":core",
+        "//enforcer/v1:payload_rust",
+        "@crates//:tempfile",
+        "@crates//:tokio",
     ],
 )

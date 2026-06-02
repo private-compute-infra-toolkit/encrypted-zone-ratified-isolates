@@ -25,7 +25,10 @@ use once_cell::sync::Lazy;
 use payload_proto::enforcer::v1::{
     ez_hybrid_payload::DeliveryMethod, EzHybridPayload, EzPayloadData,
 };
-use rust_core::{IsolateRpcServer, RpcDispatcher};
+use rust_core::{
+    shm_slab_pool::{ShmSlabPool, ShmSlabPoolOptions},
+    IsolateRpcServer, RpcDispatcher,
+};
 use std::env;
 use std::error::Error;
 use std::path::Path;
@@ -50,6 +53,58 @@ static READY_FIFO_PATH: Lazy<String> =
     Lazy::new(|| env::var("READY_FIFO_PATH").expect("Required env var"));
 static CLIENT_UDS_PATH: Lazy<String> =
     Lazy::new(|| env::var("CLIENT_UDS_PATH").expect("Required env var"));
+
+struct ShmMockPools {
+    enforcer_mock: ShmSlabPool,
+    #[allow(dead_code)]
+    isolate_mock: ShmSlabPool,
+}
+
+impl Drop for ShmMockPools {
+    fn drop(&mut self) {
+        std::env::remove_var("EZ_SHM_NUM_SLOTS");
+        std::env::remove_var("EZ_SHM_SLOT_SIZE");
+        std::env::remove_var("EZ_SHM_ENFORCER_WRITES_PATH");
+        std::env::remove_var("EZ_SHM_ISOLATE_WRITES_PATH");
+        std::env::remove_var("EZ_SHM_THRESHOLD");
+        std::env::remove_var("EZ_SHM_PAYLOAD_THRESHOLD");
+    }
+}
+
+fn setup_shm_slab_pools(dir: &tempfile::TempDir) -> ShmMockPools {
+    let enforcer_path = dir.path().join("enforcer_writes").to_string_lossy().to_string();
+    let isolate_path = dir.path().join("isolate_writes").to_string_lossy().to_string();
+
+    let num_slots = 64;
+    let block_size = 1024;
+
+    let enforcer_mock = ShmSlabPool::new(ShmSlabPoolOptions {
+        file_name: enforcer_path.clone(),
+        number_of_slots: num_slots,
+        slot_size: block_size,
+        writer: true,
+        create: true,
+    })
+    .unwrap();
+
+    let isolate_mock = ShmSlabPool::new(ShmSlabPoolOptions {
+        file_name: isolate_path.clone(),
+        number_of_slots: num_slots,
+        slot_size: block_size,
+        writer: true,
+        create: true,
+    })
+    .unwrap();
+
+    std::env::set_var("EZ_SHM_NUM_SLOTS", num_slots.to_string());
+    std::env::set_var("EZ_SHM_SLOT_SIZE", block_size.to_string());
+    std::env::set_var("EZ_SHM_ENFORCER_WRITES_PATH", enforcer_path);
+    std::env::set_var("EZ_SHM_ISOLATE_WRITES_PATH", isolate_path);
+    std::env::set_var("EZ_SHM_THRESHOLD", "10");
+    std::env::set_var("EZ_SHM_PAYLOAD_THRESHOLD", "10");
+
+    ShmMockPools { enforcer_mock, isolate_mock }
+}
 
 #[derive(Debug)]
 struct TestHarness<T> {
@@ -239,6 +294,61 @@ async fn test_unary_rpc_dispatch() {
     assert_eq!(output_data.datagrams[0], b"hello_world");
     assert_eq!(response.control_plane_metadata.clone().unwrap().ipc_message_id, 1234);
     assert!(response.control_plane_metadata.clone().unwrap().responder_is_local);
+
+    harness.stop().await.expect("Test harness should stop");
+}
+
+/// Tests successful unary RPC dispatch over shared memory (ShmData).
+#[tokio::test]
+async fn test_unary_rpc_dispatch_with_shm() {
+    let dir = tempfile::tempdir().unwrap();
+    let shm_mocks = setup_shm_slab_pools(&dir);
+
+    let mock_service = Arc::new(MockIsolateRpcService::default());
+    let dispatcher = Arc::new(RpcDispatcher::new(mock_service.clone()));
+
+    let harness = TestHarness::start(dispatcher).await.expect("Test harness should start");
+
+    assert_eq!(mock_service.unary_call_count(), 0);
+
+    let raw_payload = b"hello_world_shm_payload_with_threshold_fallback";
+    let slots = shm_mocks
+        .enforcer_mock
+        .write_to_pool(raw_payload)
+        .await
+        .expect("Failed to write payload to enforcer writes pool");
+
+    let unary_request = InvokeIsolateRequest {
+        control_plane_metadata: Some(ControlPlaneMetadata {
+            destination_service_name: "mock_service".to_string(),
+            destination_operator_domain: "mock_domain".to_string(),
+            destination_ez_instance_id: "mock_instance_id".to_string(),
+            destination_method_name: "mock_method".to_string(),
+            ipc_message_id: 5678,
+            ..Default::default()
+        }),
+        isolate_input: Some(EzHybridPayload {
+            delivery_method: Some(DeliveryMethod::ShmData(
+                payload_proto::enforcer::v1::ShmSlotData { slots },
+            )),
+        }),
+        ..Default::default()
+    };
+
+    let response =
+        harness.client.invoke_isolate(unary_request).await.expect("Failed to invoke isolate");
+
+    assert_eq!(mock_service.unary_call_count(), 1);
+
+    let DeliveryMethod::ShmData(shm_response_data) =
+        response.isolate_output.unwrap().delivery_method.unwrap()
+    else {
+        panic!("Expected ShmData");
+    };
+
+    let read_bytes = shm_mocks.isolate_mock.read_from_pool(&shm_response_data.slots).unwrap();
+    assert_eq!(read_bytes, raw_payload);
+    assert_eq!(response.control_plane_metadata.clone().unwrap().ipc_message_id, 5678);
 
     harness.stop().await.expect("Test harness should stop");
 }
@@ -478,6 +588,89 @@ async fn test_stream_rpc_dispatch() {
     assert_eq!(mock_service.unary_call_count(), 0);
     assert_eq!(mock_service.stream_call_count(), 1);
     assert_eq!(mock_service.stream_message_count(), 5);
+
+    harness.stop().await.expect("Test harness should stop");
+}
+
+/// Tests successful streaming RPC dispatch over shared memory (ShmData).
+#[tokio::test]
+async fn test_stream_rpc_dispatch_with_shm() {
+    let dir = tempfile::tempdir().unwrap();
+    let shm_mocks = setup_shm_slab_pools(&dir);
+    std::env::set_var("EZ_SHM_THRESHOLD", "10");
+
+    let mock_service = Arc::new(MockIsolateRpcService::default());
+    let dispatcher = Arc::new(RpcDispatcher::new(mock_service.clone()));
+
+    let harness = TestHarness::start(dispatcher).await.expect("Test harness should start");
+
+    assert_eq!(mock_service.unary_call_count(), 0);
+    assert_eq!(mock_service.stream_call_count(), 0);
+    assert_eq!(mock_service.stream_message_count(), 0);
+
+    let raw_payload = b"hello_world_shm_stream_payload";
+    let slots = shm_mocks
+        .enforcer_mock
+        .write_to_pool(raw_payload)
+        .await
+        .expect("Failed to write payload to enforcer writes pool");
+
+    let stream_request = InvokeIsolateRequest {
+        control_plane_metadata: Some(ControlPlaneMetadata {
+            destination_operator_domain: "mock_domain".to_string(),
+            destination_service_name: "mock_service".to_string(),
+            destination_method_name: "mock_method".to_string(),
+            destination_ez_instance_id: "mock_instance_id".to_string(),
+            ipc_message_id: 1230,
+            ..Default::default()
+        }),
+        isolate_input: Some(EzHybridPayload {
+            delivery_method: Some(DeliveryMethod::ShmData(
+                payload_proto::enforcer::v1::ShmSlotData { slots },
+            )),
+        }),
+        ..Default::default()
+    };
+
+    let requests: Vec<_> = (0..3)
+        .map(|i| {
+            let mut req = stream_request.clone();
+            if let Some(metadata) = &mut req.control_plane_metadata {
+                metadata.ipc_message_id = 1230 + i;
+            }
+            req
+        })
+        .collect();
+    let input_stream = stream::iter(requests);
+
+    let mut response_stream = harness
+        .client
+        .stream_invoke_isolate(input_stream)
+        .await
+        .expect("Failed to stream invoke isolate");
+
+    let mut responses = Vec::new();
+    while let Some(response) = response_stream.next().await {
+        responses.push(response.expect("Failed to get response"));
+    }
+
+    assert_eq!(responses.len(), 3);
+    for response in responses.iter() {
+        assert_eq!(response.control_plane_metadata.as_ref().unwrap().ipc_message_id, 1230);
+
+        let DeliveryMethod::ShmData(shm_response_data) =
+            response.isolate_output.as_ref().unwrap().delivery_method.as_ref().unwrap()
+        else {
+            panic!("Expected ShmData");
+        };
+
+        let read_bytes = shm_mocks.isolate_mock.read_from_pool(&shm_response_data.slots).unwrap();
+        assert_eq!(read_bytes, raw_payload);
+    }
+
+    assert_eq!(mock_service.unary_call_count(), 0);
+    assert_eq!(mock_service.stream_call_count(), 1);
+    assert_eq!(mock_service.stream_message_count(), 3);
 
     harness.stop().await.expect("Test harness should stop");
 }

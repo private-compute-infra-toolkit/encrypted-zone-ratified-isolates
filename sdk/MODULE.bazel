@@ -19,6 +19,12 @@ module(
 
 local_repository = use_repo_rule("@bazel_tools//tools/build_defs/repo:local.bzl", "local_repository")
 
+bazel_dep(name = "sdk-patches", version = "0.0.0")
+local_path_override(
+    module_name = "sdk-patches",
+    path = "patches",
+)
+
 local_repository(
     name = "google_privacysandbox_functionaltest_system",
     path = "functionaltest-system",
@@ -130,6 +136,10 @@ crate.spec(
     version = "0.14.1",
 )
 crate.spec(
+    package = "tempfile",
+    version = "3.12.0",
+)
+crate.spec(
     features = ["full"],
     package = "tokio",
     version = "1.39.3",
@@ -205,6 +215,10 @@ crate.spec(
     version = "0.4.22",
 )
 crate.spec(
+    package = "env_logger",
+    version = "0.11.8",
+)
+crate.spec(
     package = "memmap2",
     version = "0.9.2",
 )
@@ -250,10 +264,10 @@ crate.spec(
 crate.annotation(
     crate = "boring-sys",
     patch_args = ["-p1"],
-    patches = ["@@privacy-sandbox-ez-sdk~//patches:boring-sys-cmake.patch"],
+    patches = ["@@sdk-patches~//:boring-sys-cmake.patch"],
     version = "5.0.2",
     deps = [
-        "@@privacy-sandbox-ez-sdk~//:boringssl_ssl",
+        "@@sdk-patches~//:boringssl_ssl",
     ],
 )
 crate.spec(
@@ -277,8 +291,8 @@ crate.spec(
     version = "0.31.0",
 )
 crate.spec(
-    package = "opentelemetry-http",
-    version = "0.31.0",
+    package = "fake-opentelemetry-collector",
+    version = "0.34.1",
 )
 crate.spec(
     features = [
@@ -315,6 +329,14 @@ crate.spec(
 crate.spec(
     package = "tracing-opentelemetry",
     version = "0.32.1",
+)
+crate.spec(
+    package = "thiserror",
+    version = "1.0.64",
+)
+crate.spec(
+    package = "tempfile",
+    version = "3.13.0",
 )
 crate.from_specs()
 use_repo(crate, "crates")

@@ -14,9 +14,12 @@
 
 mod isolate_ez_bridge_client;
 mod isolate_server;
-mod otel;
-mod rpc_dispatcher;
+pub mod rpc_dispatcher;
 mod rpc_handler;
+pub mod shm_slab_pool;
+pub mod telemetry;
+pub use telemetry::grpc_connector;
+pub use telemetry::traces;
 mod utils;
 
 pub use isolate_ez_bridge_client::IsolateEzBridgeSdkClient;
@@ -24,9 +27,13 @@ pub use isolate_server::IsolateRpcServer;
 pub use rpc_dispatcher::IsolateRpcService;
 pub use rpc_dispatcher::RpcDispatcher;
 pub use rpc_handler::RpcHandler;
+pub use shm_slab_pool::EzShmSlabPool;
+
 pub use utils::invoke_isolate_stream_to_message_stream;
 pub use utils::message_stream_to_invoke_isolate_stream;
 pub use utils::message_to_invoke_isolate_response;
+pub use utils::payload_bytes_to_invoke_isolate_response;
+
 pub use utils::GrpcClientRequestStream;
 pub use utils::GrpcRequestStream;
 pub use utils::GrpcResponseStream;

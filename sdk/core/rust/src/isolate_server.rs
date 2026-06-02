@@ -113,9 +113,6 @@ impl<T: EzIsolateBridge + Send + Sync + 'static> IsolateRpcServer<T> {
         }
         log::info!("Starting EzIsolateBridge Server. Socket path: {}", socket_path);
 
-        // Initialize OpenTelemetry SDK metrics targeting the loopback UDS.
-        crate::otel::init_metrics();
-
         let uds = UnixListener::bind(socket_path).expect("Failed to bind to socket path");
         let uds_stream = UnixListenerStream::new(uds);
 

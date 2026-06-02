@@ -25,9 +25,14 @@ use enforcer_proto::enforcer::v1::{
     PollIsolateStateRequest, PollIsolateStateResponse, PublishEventForRequest,
     PublishEventForResponse, StreamSubscribeToRequest, StreamSubscribeToResponse,
 };
+use futures::StreamExt;
 use hyper_util::rt::TokioIo;
+use payload_proto::enforcer::v1::{
+    ez_hybrid_payload::DeliveryMethod, EzHybridPayload, EzPayloadData, ShmSlotReference,
+};
+use rust_core::shm_slab_pool::{ShmSlabPool, ShmSlabPoolOptions};
 use rust_core::{
-    GrpcResponseStream, IsolateRpcService, PeekableInvokeIsolateRequestStream,
+    EzShmSlabPool, GrpcResponseStream, IsolateRpcService, PeekableInvokeIsolateRequestStream,
     PinBoxInvokeIsolateResponseStream,
 };
 use std::pin::Pin;
@@ -36,7 +41,6 @@ use std::sync::Arc;
 use tokio::net::UnixStream;
 use tokio::sync::Mutex;
 use tokio_stream::wrappers::ReceiverStream;
-use tokio_stream::StreamExt;
 use tonic::transport::{Channel, Endpoint, Uri};
 use tonic::{IntoStreamingRequest, Request, Response, Status, Streaming};
 use tower::service_fn;
@@ -165,23 +169,18 @@ impl IsolateRpcService for MockIsolateRpcService {
         &self,
         method_name: &str,
         request_bytes: &[u8],
+        shm_pool: Option<&EzShmSlabPool>,
     ) -> Result<InvokeIsolateResponse, Status> {
         if method_name != "mock_method" {
             return Err(Status::invalid_argument("Invalid method name"));
         }
         self.unary_call_count.fetch_add(1, Ordering::SeqCst);
-        let resp = InvokeIsolateResponse {
-            isolate_output: Some(payload_proto::enforcer::v1::EzHybridPayload {
-                delivery_method: Some(
-                    payload_proto::enforcer::v1::ez_hybrid_payload::DeliveryMethod::InlineData(
-                        payload_proto::enforcer::v1::EzPayloadData {
-                            datagrams: vec![request_bytes.to_vec()],
-                        },
-                    ),
-                ),
-            }),
-            ..Default::default()
-        };
+        let resp = rust_core::payload_bytes_to_invoke_isolate_response(
+            request_bytes.to_vec(),
+            DataScopeType::Unspecified,
+            shm_pool,
+        )
+        .await;
         Ok(resp)
     }
 
@@ -189,6 +188,7 @@ impl IsolateRpcService for MockIsolateRpcService {
         &self,
         method_name: &str,
         request: Request<PeekableInvokeIsolateRequestStream>,
+        shm_pool: Option<EzShmSlabPool>,
     ) -> Result<Response<PinBoxInvokeIsolateResponseStream>, Status> {
         if method_name != "mock_method" {
             return Err(Status::invalid_argument("Invalid method name"));
@@ -196,14 +196,36 @@ impl IsolateRpcService for MockIsolateRpcService {
         self.stream_call_count.fetch_add(1, Ordering::SeqCst);
 
         let stream_message_count = self.stream_message_count.clone();
-        let output_stream = request.into_inner().map(move |req| {
-            stream_message_count.fetch_add(1, Ordering::SeqCst);
-            let req = req.expect("Request should be Ok");
-            let resp = InvokeIsolateResponse {
-                isolate_output: req.isolate_input.clone(),
-                ..Default::default()
-            };
-            Ok(resp)
+        let shm_pool_clone = shm_pool.clone();
+        let output_stream = request.into_inner().then(move |req| {
+            let stream_message_count = stream_message_count.clone();
+            let shm_pool = shm_pool_clone.clone();
+            async move {
+                stream_message_count.fetch_add(1, Ordering::SeqCst);
+                let req = req?;
+
+                use payload_proto::enforcer::v1::ez_hybrid_payload::DeliveryMethod;
+                let request_bytes = match req.isolate_input.and_then(|i| i.delivery_method) {
+                    Some(DeliveryMethod::InlineData(data)) => data.datagrams.into_iter().next(),
+                    Some(DeliveryMethod::ShmData(shm_data)) => {
+                        if let Some(shm_pool) = &shm_pool {
+                            shm_pool.read_from_enforcer(&shm_data.slots).ok()
+                        } else {
+                            None
+                        }
+                    }
+                    None => None,
+                };
+                let request_bytes = request_bytes.unwrap_or_default();
+
+                let resp = rust_core::payload_bytes_to_invoke_isolate_response(
+                    request_bytes,
+                    DataScopeType::Unspecified,
+                    shm_pool.as_ref(),
+                )
+                .await;
+                Ok(resp)
+            }
         });
 
         Ok(Response::new(Box::pin(output_stream)))
@@ -223,6 +245,7 @@ impl IsolateRpcService for ErrorIsolateRpcService {
         &self,
         _method_name: &str,
         _request_bytes: &[u8],
+        _shm_pool: Option<&EzShmSlabPool>,
     ) -> Result<InvokeIsolateResponse, Status> {
         Err(Status::unimplemented("Internal error"))
     }
@@ -231,6 +254,7 @@ impl IsolateRpcService for ErrorIsolateRpcService {
         &self,
         _method_name: &str,
         _request: Request<PeekableInvokeIsolateRequestStream>,
+        _shm_pool: Option<EzShmSlabPool>,
     ) -> Result<Response<PinBoxInvokeIsolateResponseStream>, Status> {
         Err(Status::unimplemented("Internal error"))
     }
@@ -251,6 +275,10 @@ pub struct MockIsolateEzBridgeServer {
     stream_message_count: Arc<AtomicUsize>,
     #[derivative(Default(value = "Arc::new(Mutex::new(None))"))]
     last_known_state: Arc<Mutex<Option<i32>>>,
+    #[derivative(Default(value = "Arc::new(Mutex::new(None))"))]
+    last_received_request: Arc<Mutex<Option<InvokeEzRequest>>>,
+    #[derivative(Default(value = "Arc::new(Mutex::new(false))"))]
+    force_shm_response: Arc<Mutex<bool>>,
 }
 
 impl MockIsolateEzBridgeServer {
@@ -269,6 +297,14 @@ impl MockIsolateEzBridgeServer {
     pub async fn last_known_state(&self) -> Option<i32> {
         *self.last_known_state.lock().await
     }
+
+    pub async fn last_received_request(&self) -> Option<InvokeEzRequest> {
+        self.last_received_request.lock().await.clone()
+    }
+
+    pub async fn set_force_shm_response(&self, force: bool) {
+        *self.force_shm_response.lock().await = force;
+    }
 }
 
 #[tonic::async_trait]
@@ -278,9 +314,11 @@ impl IsolateEzBridge for MockIsolateEzBridgeServer {
         request: Request<InvokeEzRequest>,
     ) -> Result<Response<InvokeEzResponse>, Status> {
         let req = request.into_inner();
+        *self.last_received_request.lock().await = Some(req.clone());
         self.unary_call_count.fetch_add(1, Ordering::SeqCst);
 
-        let resp = validate_and_process_invoke_ez(req, "mock_")?;
+        let force_shm = *self.force_shm_response.lock().await;
+        let resp = validate_and_process_invoke_ez(req, "mock_", force_shm).await?;
         Ok(Response::new(resp))
     }
 
@@ -291,14 +329,20 @@ impl IsolateEzBridge for MockIsolateEzBridgeServer {
     ) -> Result<Response<Self::StreamInvokeEzStream>, Status> {
         self.stream_call_count.fetch_add(1, Ordering::SeqCst);
         let stream_message_count = self.stream_message_count.clone();
+        let force_shm_response = self.force_shm_response.clone();
 
-        let output_stream = request.into_inner().map(move |req| {
-            stream_message_count.fetch_add(1, Ordering::SeqCst);
-            let Ok(req) = req else {
-                return Err(Status::invalid_argument("Request should be Ok"));
-            };
+        let output_stream = request.into_inner().then(move |req| {
+            let stream_message_count = stream_message_count.clone();
+            let force_shm_response = force_shm_response.clone();
+            async move {
+                stream_message_count.fetch_add(1, Ordering::SeqCst);
+                let Ok(req) = req else {
+                    return Err(Status::invalid_argument("Request should be Ok"));
+                };
 
-            validate_and_process_invoke_ez(req, "stream_mock_")
+                let force_shm = *force_shm_response.lock().await;
+                validate_and_process_invoke_ez(req, "stream_mock_", force_shm).await
+            }
         });
 
         Ok(Response::new(Box::pin(output_stream)))
@@ -362,9 +406,10 @@ impl IsolateEzBridge for MockIsolateEzBridgeServer {
     }
 }
 
-fn validate_and_process_invoke_ez(
+async fn validate_and_process_invoke_ez(
     req: InvokeEzRequest,
     prefix: &str,
+    force_shm: bool,
 ) -> Result<InvokeEzResponse, Status> {
     let Some(control_plane_metadata) = req.control_plane_metadata else {
         return Err(Status::invalid_argument("Control plane metadata is required"));
@@ -384,6 +429,60 @@ fn validate_and_process_invoke_ez(
     } else {
         return Err(Status::invalid_argument("Payload scope is required"));
     }
+    let request_bytes = match req.isolate_request_payload.clone().and_then(|p| p.delivery_method) {
+        Some(DeliveryMethod::InlineData(data)) => {
+            data.datagrams.into_iter().next().unwrap_or_default()
+        }
+        Some(DeliveryMethod::ShmData(shm_data)) => match MockEzShmSlabPool::new() {
+            Ok(mock_pool) => match mock_pool.read_request(&shm_data.slots) {
+                Ok(payload_bytes) => payload_bytes,
+                Err(err) => {
+                    return Err(Status::internal(format!(
+                        "Failed to read from isolate shared memory pool: {:?}",
+                        err
+                    )));
+                }
+            },
+            Err(err) => {
+                return Err(Status::internal(format!(
+                    "Failed to initialize MockEzShmSlabPool: {:?}",
+                    err
+                )));
+            }
+        },
+        None => Vec::new(),
+    };
+
+    let ez_response_payload = if force_shm {
+        match MockEzShmSlabPool::new() {
+            Ok(mock_pool) => match mock_pool.write_response(&request_bytes).await {
+                Ok(slots) => Some(EzHybridPayload {
+                    delivery_method: Some(DeliveryMethod::ShmData(
+                        payload_proto::enforcer::v1::ShmSlotData { slots },
+                    )),
+                }),
+                Err(err) => {
+                    return Err(Status::internal(format!(
+                        "Mock server failed to write response to shared memory: {:?}",
+                        err
+                    )));
+                }
+            },
+            Err(err) => {
+                return Err(Status::internal(format!(
+                    "Mock server failed to initialize MockEzShmSlabPool: {:?}",
+                    err
+                )));
+            }
+        }
+    } else {
+        Some(EzHybridPayload {
+            delivery_method: Some(DeliveryMethod::InlineData(EzPayloadData {
+                datagrams: vec![request_bytes],
+            })),
+        })
+    };
+
     Ok(InvokeEzResponse {
         control_plane_metadata: Some(ControlPlaneMetadata {
             ipc_message_id: control_plane_metadata.ipc_message_id,
@@ -394,7 +493,128 @@ fn validate_and_process_invoke_ez(
             responder_is_local: true,
             ..Default::default()
         }),
-        ez_response_payload: req.isolate_request_payload,
+        ez_response_payload,
         ..Default::default()
     })
+}
+
+/// Wrapper facilitating shared memory slab communication on the mock/server/enforcer side.
+#[derive(Clone, Debug)]
+pub struct MockEzShmSlabPool {
+    enforcer_writes_pool: Arc<ShmSlabPool>, // write to
+    isolate_writes_pool: Arc<ShmSlabPool>,  // read from
+}
+
+impl MockEzShmSlabPool {
+    /// Creates and initializes the mock shared memory slab pools using
+    /// configuration specified in environment variables:
+    /// - `EZ_SHM_NUM_SLOTS`: Total block slots.
+    /// - `EZ_SHM_SLOT_SIZE`: Slot block size in bytes.
+    /// - `EZ_SHM_ENFORCER_WRITES_PATH`: Filesystem path to enforcer writes pool.
+    /// - `EZ_SHM_ISOLATE_WRITES_PATH`: Filesystem path to isolate writes pool.
+    pub fn new() -> anyhow::Result<Self> {
+        let num_slots = std::env::var("EZ_SHM_NUM_SLOTS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(1024);
+
+        let slot_size = std::env::var("EZ_SHM_SLOT_SIZE")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(5 * 1024 * 1024);
+
+        let enforcer_shm_path = std::env::var("EZ_SHM_ENFORCER_WRITES_PATH")
+            .unwrap_or_else(|_| "/enforcer-isolate-shared/enforcer-writes".to_string());
+
+        let isolate_shm_path = std::env::var("EZ_SHM_ISOLATE_WRITES_PATH")
+            .unwrap_or_else(|_| "/enforcer-isolate-shared/isolate-writes".to_string());
+
+        let enforcer_writes_pool = Arc::new(ShmSlabPool::new(ShmSlabPoolOptions {
+            file_name: enforcer_shm_path,
+            number_of_slots: num_slots,
+            slot_size,
+            writer: true,  // Mock writes to enforcer-writes
+            create: false, // Backing files created by TestShmSlabPools
+        })?);
+
+        let isolate_writes_pool = Arc::new(ShmSlabPool::new(ShmSlabPoolOptions {
+            file_name: isolate_shm_path,
+            number_of_slots: num_slots,
+            slot_size,
+            writer: false, // Mock only reads from isolate-writes
+            create: false, // Backing files created by TestShmSlabPools
+        })?);
+
+        Ok(Self { enforcer_writes_pool, isolate_writes_pool })
+    }
+
+    /// Reads incoming request payload from isolate-writes pool.
+    pub fn read_request(&self, slot_references: &[ShmSlotReference]) -> anyhow::Result<Vec<u8>> {
+        self.isolate_writes_pool.read_from_pool(slot_references).map_err(Into::into)
+    }
+
+    /// Writes outgoing response payload to enforcer-writes pool.
+    pub async fn write_response(&self, payload: &[u8]) -> anyhow::Result<Vec<ShmSlotReference>> {
+        self.enforcer_writes_pool.write_to_pool(payload).await.map_err(Into::into)
+    }
+}
+
+/// Helper structure to construct and manage shared memory slab pools for tests.
+///
+/// Under RAII, environment variables set by the constructor are automatically
+/// cleaned up when the `TestShmSlabPools` goes out of scope, preventing environment
+/// leakage between test cases.
+#[derive(Debug)]
+pub struct TestShmSlabPools {
+    pub enforcer_pool: Arc<ShmSlabPool>,
+    pub isolate_pool: Arc<ShmSlabPool>,
+}
+
+impl TestShmSlabPools {
+    /// Creates back-to-back shared memory slab pools under `dir`, initializes the backing files,
+    /// and configures corresponding `EZ_SHM_*` environment variables.
+    pub fn new(dir: &std::path::Path, number_of_slots: u64, slot_size: u64) -> Self {
+        let enforcer_path = dir.join("enforcer_writes").to_string_lossy().to_string();
+        let isolate_path = dir.join("isolate_writes").to_string_lossy().to_string();
+
+        let enforcer_pool = Arc::new(
+            ShmSlabPool::new(ShmSlabPoolOptions {
+                file_name: enforcer_path.clone(),
+                number_of_slots,
+                slot_size,
+                writer: true,
+                create: true,
+            })
+            .expect("Failed to initialize enforcer_writes backing pool for test"),
+        );
+
+        let isolate_pool = Arc::new(
+            ShmSlabPool::new(ShmSlabPoolOptions {
+                file_name: isolate_path.clone(),
+                number_of_slots,
+                slot_size,
+                writer: true,
+                create: true,
+            })
+            .expect("Failed to initialize isolate_writes backing pool for test"),
+        );
+
+        std::env::set_var("EZ_SHM_NUM_SLOTS", number_of_slots.to_string());
+        std::env::set_var("EZ_SHM_SLOT_SIZE", slot_size.to_string());
+        std::env::set_var("EZ_SHM_ENFORCER_WRITES_PATH", &enforcer_path);
+        std::env::set_var("EZ_SHM_ISOLATE_WRITES_PATH", &isolate_path);
+
+        Self { enforcer_pool, isolate_pool }
+    }
+}
+
+impl Drop for TestShmSlabPools {
+    fn drop(&mut self) {
+        std::env::remove_var("EZ_SHM_NUM_SLOTS");
+        std::env::remove_var("EZ_SHM_SLOT_SIZE");
+        std::env::remove_var("EZ_SHM_ENFORCER_WRITES_PATH");
+        std::env::remove_var("EZ_SHM_ISOLATE_WRITES_PATH");
+        std::env::remove_var("EZ_SHM_PAYLOAD_THRESHOLD");
+        std::env::remove_var("EZ_SHM_THRESHOLD");
+    }
 }

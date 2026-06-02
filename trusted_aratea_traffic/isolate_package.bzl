@@ -1,1 +1,0 @@
-../isolate_package.bzl

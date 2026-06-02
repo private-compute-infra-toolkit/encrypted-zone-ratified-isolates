@@ -22,13 +22,15 @@ use once_cell::sync::Lazy;
 use payload_proto::enforcer::v1::{
     ez_hybrid_payload::DeliveryMethod, EzHybridPayload, EzPayloadData,
 };
+use prost::Message;
+
 use rust_core::{IsolateEzBridgeSdkClient, RpcHandler};
 use std::env;
 use std::error::Error;
 use std::path::Path;
 use std::sync::Arc;
 use test_message_proto::test_message::TestMessage;
-use test_utils::MockIsolateEzBridgeServer;
+use test_utils::{MockIsolateEzBridgeServer, TestShmSlabPools};
 use tokio::fs::{create_dir_all, remove_file, try_exists};
 use tokio::net::UnixListener;
 use tokio::sync::mpsc::channel;
@@ -306,4 +308,188 @@ async fn test_rpc_handler_stream() {
     );
 
     harness.stop().await.expect("Test harness should stop");
+}
+
+/// Tests the round-trip shared memory capability of the RpcHandler:
+/// 1. Outbound Request: Verifies that when a unary request payload exceeds the threshold,
+///    the RpcHandler writes it to the `/isolate-writes` shared memory pool and sends
+///    a `ShmData` delivery method in the `InvokeEzRequest`.
+/// 2. Inbound Response: Verifies that when the enforcer mock responds with a `ShmData`
+///    delivery method, the RpcHandler successfully reads and decodes the response payload
+///    from the `/enforcer-writes` shared memory pool.
+#[tokio::test]
+async fn test_rpc_handler_unary_with_shm() {
+    let dir = tempfile::tempdir().unwrap();
+    let shm_pools = TestShmSlabPools::new(dir.path(), 4, 1024);
+    std::env::set_var("EZ_SHM_PAYLOAD_THRESHOLD", "0");
+
+    let harness = TestHarness::start().await.expect("Test harness should start");
+    harness.mock_enforcer_server.set_force_shm_response(true).await;
+
+    let rpc_handler = RpcHandler::new(
+        harness.client.clone(),
+        "test_operator_domain".to_string(),
+        "test_service_name".to_string(),
+        DataScopeType::UserPrivate,
+    );
+
+    let payload = TestMessage {
+        field1: "test_payload_large_exceeding_shm_threshold_test".to_string(),
+        field2: "".to_string(),
+    };
+
+    let _response = rpc_handler
+        .isolate_rpc_call::<TestMessage, TestMessage>("test_method", payload)
+        .await
+        .expect("Failed to invoke rpc call");
+
+    let received_request = harness
+        .mock_enforcer_server
+        .last_received_request()
+        .await
+        .expect("Mock server should have captured the request");
+
+    let delivery_method = received_request
+        .isolate_request_payload
+        .as_ref()
+        .and_then(|p| p.delivery_method.as_ref())
+        .expect("Should have request payload delivery method");
+
+    let DeliveryMethod::ShmData(shm_data) = delivery_method else {
+        panic!("Expected ShmData request payload");
+    };
+
+    let read_bytes = shm_pools.isolate_pool.read_from_pool(&shm_data.slots).unwrap();
+    let decoded_message = TestMessage::decode(read_bytes.as_slice()).unwrap();
+    assert_eq!(decoded_message.field1, "test_payload_large_exceeding_shm_threshold_test");
+
+    harness.stop().await.expect("Test harness should stop");
+}
+
+#[tokio::test]
+async fn test_rpc_handler_unary_with_shm_fallback() {
+    let dir = tempfile::tempdir().unwrap();
+    let shm_pools = TestShmSlabPools::new(dir.path(), 4, 1024);
+    std::env::set_var("EZ_SHM_PAYLOAD_THRESHOLD", "0");
+
+    let harness = TestHarness::start().await.expect("Test harness should start");
+
+    let rpc_handler = RpcHandler::new(
+        harness.client.clone(),
+        "test_operator_domain".to_string(),
+        "test_service_name".to_string(),
+        DataScopeType::UserPrivate,
+    );
+
+    // Allocate all 64 slots in the isolate writes pool to force write_to_enforcer to fail!
+    for _ in 0..64 {
+        shm_pools.isolate_pool.write_to_pool(b"dummy").await.unwrap();
+    }
+
+    let payload = TestMessage {
+        field1: "test_payload_fallback_to_inline_when_shm_full_test".to_string(),
+        field2: "".to_string(),
+    };
+
+    let _response = rpc_handler
+        .isolate_rpc_call::<TestMessage, TestMessage>("test_method", payload)
+        .await
+        .expect("Failed to invoke rpc call");
+
+    let received_request = harness
+        .mock_enforcer_server
+        .last_received_request()
+        .await
+        .expect("Mock server should have captured the request");
+
+    let delivery_method = received_request
+        .isolate_request_payload
+        .as_ref()
+        .and_then(|p| p.delivery_method.as_ref())
+        .expect("Should have request payload delivery method");
+
+    let DeliveryMethod::InlineData(inline_data) = delivery_method else {
+        panic!("Expected InlineData request payload due to UDS fallback");
+    };
+
+    let decoded_message = TestMessage::decode(inline_data.datagrams[0].as_slice()).unwrap();
+    assert_eq!(decoded_message.field1, "test_payload_fallback_to_inline_when_shm_full_test");
+
+    harness.stop().await.expect("Test harness should stop");
+}
+
+#[tokio::test]
+async fn test_rpc_handler_stream_with_shm() {
+    let dir = tempfile::tempdir().unwrap();
+    let enforcer_path = dir.path().join("enforcer_writes").to_string_lossy().to_string();
+    let isolate_path = dir.path().join("isolate_writes").to_string_lossy().to_string();
+
+    let _enforcer_pool_creator =
+        rust_core::shm_slab_pool::ShmSlabPool::new(rust_core::shm_slab_pool::ShmSlabPoolOptions {
+            file_name: enforcer_path.clone(),
+            number_of_slots: 4,
+            slot_size: 1024,
+            writer: true,
+            create: true,
+        })
+        .unwrap();
+
+    let _isolate_pool_creator =
+        rust_core::shm_slab_pool::ShmSlabPool::new(rust_core::shm_slab_pool::ShmSlabPoolOptions {
+            file_name: isolate_path.clone(),
+            number_of_slots: 4,
+            slot_size: 1024,
+            writer: true,
+            create: true,
+        })
+        .unwrap();
+
+    std::env::set_var("EZ_SHM_NUM_SLOTS", "4");
+    std::env::set_var("EZ_SHM_SLOT_SIZE", "1024");
+    std::env::set_var("EZ_SHM_ENFORCER_WRITES_PATH", &enforcer_path);
+    std::env::set_var("EZ_SHM_ISOLATE_WRITES_PATH", &isolate_path);
+    std::env::set_var("EZ_SHM_THRESHOLD", "10");
+
+    let harness = TestHarness::start().await.expect("Test harness should start");
+    harness.mock_enforcer_server.set_force_shm_response(true).await;
+
+    let rpc_handler = RpcHandler::new(
+        harness.client.clone(),
+        "test_operator_domain".to_string(),
+        "test_service_name".to_string(),
+        DataScopeType::UserPrivate,
+    );
+
+    let stream_test_request = TestMessage {
+        field1: "test_payload_large_exceeding_shm_threshold_stream_test".to_string(),
+        field2: "".to_string(),
+    };
+    let request_stream = tokio_stream::iter(vec![stream_test_request.clone(); 5]);
+
+    let mut response_stream = rpc_handler
+        .stream_isolate_rpc_call::<TestMessage, TestMessage>(
+            "test_method",
+            Request::new(request_stream),
+        )
+        .await
+        .expect("Failed to invoke rpc stream call")
+        .into_inner();
+
+    let mut responses = Vec::new();
+    while let Some(response) = response_stream.next().await {
+        responses.push(response.expect("Failed to get response"));
+    }
+
+    assert_eq!(responses.len(), 5);
+    for resp in responses {
+        assert_eq!(resp.field1, "test_payload_large_exceeding_shm_threshold_stream_test");
+    }
+
+    harness.stop().await.expect("Test harness should stop");
+
+    std::env::remove_var("EZ_SHM_NUM_SLOTS");
+    std::env::remove_var("EZ_SHM_SLOT_SIZE");
+    std::env::remove_var("EZ_SHM_ENFORCER_WRITES_PATH");
+    std::env::remove_var("EZ_SHM_ISOLATE_WRITES_PATH");
+    std::env::remove_var("EZ_SHM_THRESHOLD");
 }

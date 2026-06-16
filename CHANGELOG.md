@@ -2,6 +2,40 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## 0.10.0 (2026-06-16)
+
+
+### Dependencies
+
+* **deps:** Update DevKit to release-3.9.0
+
+
+### Noise Session Manager
+
+* **noise:** Add metrics about server stream closure
+
+
+### TLS Session Manager
+
+* **tsm:** Add downstream RPC invoker, integration test, and backend API
+
+
+### Features
+
+* **nsm:** Double check cached cert to avoid race
+* **nsm:** Refresh stale cached certs
+* **setup_isolate:** add Setup Isolate proto definition
+* **setup_isolate:** add SetupService
+* **setup_isolate:** configure basic Bazel workspace
+* upgrade rust to latest stable in all RIs (1.96.0)
+
+
+### Bug Fixes
+
+* gRPC error propagation and connection leak in NoiseSessionManager
+* missing ELF due to extractor absolute symlink changes
+* **nsm:** Cap max cert staleness to validity
+
 ## 0.9.0 (2026-06-02)
 
 

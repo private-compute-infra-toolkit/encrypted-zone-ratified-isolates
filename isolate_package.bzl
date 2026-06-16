@@ -49,10 +49,17 @@ def isolate_package(base_name, binary, install_path = "/usr/local/bin"):
         owner = "{}.{}".format(user.uid, user.gid),
     )
 
+    pkg_tar(
+        name = "{}_fix_ld_symlink".format(isolate_name),
+        symlinks = {
+            "/lib64/ld-linux-x86-64.so.2": "../lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+        },
+    )
+
     oci_image(
         name = "{}_image".format(isolate_name),
         base = "@isolate_runtime_ubuntu_base",
-        tars = [":{}_tar".format(isolate_name)],
+        tars = [":{}_tar".format(isolate_name), ":{}_fix_ld_symlink".format(isolate_name)],
     )
 
     oci_runtime_bundle(

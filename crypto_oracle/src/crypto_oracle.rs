@@ -12,11 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-/* Tonic status are too large in current version (0.13)
- * Fixed in tonic v0.14.0 https://github.com/hyperium/tonic/issues/2253
- * https://github.com/hyperium/tonic/releases/tag/v0.14.0
- */
-#![allow(clippy::result_large_err)]
 use dashmap::DashMap;
 use std::{cmp::max, sync::Arc};
 use tink_core::{

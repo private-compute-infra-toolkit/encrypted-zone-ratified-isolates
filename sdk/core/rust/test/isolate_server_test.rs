@@ -110,10 +110,10 @@ fn setup_shm_slab_pools(dir: &tempfile::TempDir) -> ShmMockPools {
 struct TestHarness<T> {
     client: TestEzIsolateBridgeClient,
     bridge: Arc<T>,
-    server_handle: JoinHandle<Result<(), anyhow::Error>>,
+    server_handle: Option<JoinHandle<Result<(), anyhow::Error>>>,
     server_shutdown_tx: Sender<()>,
     mock_enforcer_server: MockIsolateEzBridgeServer,
-    mock_enforcer_handle: JoinHandle<Result<(), anyhow::Error>>,
+    mock_enforcer_handle: Option<JoinHandle<Result<(), anyhow::Error>>>,
     mock_enforcer_shutdown_tx: Sender<()>,
 }
 
@@ -185,24 +185,28 @@ impl<T: EzIsolateBridge + Send + Sync + 'static> TestHarness<T> {
             client,
             bridge,
             server_shutdown_tx,
-            server_handle,
+            server_handle: Some(server_handle),
             mock_enforcer_server,
-            mock_enforcer_handle,
+            mock_enforcer_handle: Some(mock_enforcer_handle),
             mock_enforcer_shutdown_tx,
         })
     }
 
-    async fn stop(self) -> Result<(), Box<dyn Error>> {
+    async fn stop(mut self) -> Result<(), Box<dyn Error>> {
         self.server_shutdown_tx.send(()).await.context("Failed to send shutdown signal")?;
-        self.server_handle
-            .await
-            .context("Failed to wait for server to shut down")?
-            .context("Fake enforcer server failed")?;
+        if let Some(handle) = self.server_handle.take() {
+            handle
+                .await
+                .context("Failed to wait for server to shut down")?
+                .context("Fake enforcer server failed")?;
+        }
         self.mock_enforcer_shutdown_tx.send(()).await.context("Failed to send shutdown signal")?;
-        self.mock_enforcer_handle
-            .await
-            .context("Failed to wait for mock enforcer to shut down")?
-            .context("Mock enforcer failed")?;
+        if let Some(handle) = self.mock_enforcer_handle.take() {
+            handle
+                .await
+                .context("Failed to wait for mock enforcer to shut down")?
+                .context("Mock enforcer failed")?;
+        }
         Ok(())
     }
 }
@@ -1001,4 +1005,18 @@ async fn test_request_lifecycle_with_state_change() {
     assert_ne!(status.code(), Code::Ok, "Expected non-Ok code in Retiring state");
 
     harness.stop().await.expect("Test harness should stop");
+}
+
+impl<T> Drop for TestHarness<T> {
+    fn drop(&mut self) {
+        for path in [SERVER_UDS_PATH.as_str(), CLIENT_UDS_PATH.as_str(), READY_FIFO_PATH.as_str()] {
+            let path = Path::new(path);
+            if path.exists() {
+                let _ = std::fs::remove_file(path);
+            }
+        }
+        if let Some(parent) = Path::new(SERVER_UDS_PATH.as_str()).parent() {
+            let _ = std::fs::remove_dir(parent);
+        }
+    }
 }

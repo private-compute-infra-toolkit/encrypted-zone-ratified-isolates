@@ -29,6 +29,8 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio_stream::StreamExt;
 use tonic::{Request, Response, Status, Streaming};
+use tracing::Instrument;
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 /// A trait for services that run within the isolate and handle RPC calls.
 ///
@@ -215,8 +217,15 @@ impl EzIsolateBridge for RpcDispatcher {
             )),
         }?;
 
+        let dispatch_span = tracing::info_span!("IsolateServer.dispatch_unary");
+        let parent_context = opentelemetry::global::get_text_map_propagator(|propagator| {
+            propagator.extract(&metadata.metadata_headers)
+        });
+        let _ = dispatch_span.set_parent(parent_context);
+
         let mut response = service
             .unary_rpc_handler(method_name, &request_bytes, self.ez_shm_slab_pool.as_ref())
+            .instrument(dispatch_span)
             .await?;
         let metadata = response.control_plane_metadata.get_or_insert_with(Default::default);
         metadata.ipc_message_id = ipc_message_id;
@@ -268,12 +277,20 @@ impl EzIsolateBridge for RpcDispatcher {
           // Note: The first message (peeked above) is logically consumed from the stream
           // passed to the handler if the Peekable internal buffer is discarded.
           // However, we now pass the peekable stream itself (wrapped in Request), so no data is lost.
+          // Create a dispatch span linked to the incoming traceparent from the message body's metadata.
+          let dispatch_span = tracing::info_span!("IsolateServer.dispatch_stream");
+          let parent_context = opentelemetry::global::get_text_map_propagator(|propagator| {
+              propagator.extract(&metadata.metadata_headers)
+          });
+          let _ = dispatch_span.set_parent(parent_context);
+
           let response_stream = service
                 .streaming_rpc_handler(
                     method_name,
                     Request::new(peekable_stream),
                     this.ez_shm_slab_pool.clone(),
                 )
+                .instrument(dispatch_span)
                 .await?
                 .into_inner();
           // `response_stream` is not `Unpin` because we removed the `Unpin` bound from the

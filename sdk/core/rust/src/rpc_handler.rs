@@ -87,6 +87,7 @@ impl RpcHandler {
             delivery_method =
                 Some(DeliveryMethod::InlineData(EzPayloadData { datagrams: vec![request_bytes] }));
         };
+        let metadata_headers = crate::telemetry::traces::get_trace_context();
         InvokeEzRequest {
             control_plane_metadata: Some(ControlPlaneMetadata {
                 ipc_message_id,
@@ -94,6 +95,7 @@ impl RpcHandler {
                 destination_operator_domain: self.operator_domain.clone(),
                 destination_service_name: self.service_name.clone(),
                 destination_method_name: method_name,
+                metadata_headers,
                 ..Default::default()
             }),
             isolate_request_iscope: Some(EzPayloadIsolateScope {
@@ -209,14 +211,45 @@ impl RpcHandler {
         method_name: &str,
         request_stream: Request<impl GrpcClientRequestStream<T>>,
     ) -> Result<Response<PinBoxGrpcResponseStream<U>>, Status> {
+        let request_stream_vec = request_stream.map(|stream| stream.map(|req| req.encode_to_vec()));
+
+        let response_stream_vec =
+            self.stream_isolate_rpc_call_vec(method_name, request_stream_vec).await?;
+
+        let mapped_response_stream = response_stream_vec.into_inner().map(move |res| {
+            let bytes = res?;
+            U::decode(bytes.as_slice()).map_err(|e| {
+                log::error!("Failed to decode response: {:?}", e);
+                Status::internal(e.to_string())
+            })
+        });
+
+        Ok(Response::new(Box::pin(mapped_response_stream)))
+    }
+
+    /// Performs a streaming RPC call to the isolate, using raw `Vec<u8>` payloads.
+    ///
+    /// This method maps an input stream of raw request bytes to `InvokeEzRequest` messages,
+    /// and maps the output stream of `InvokeEzResponse` messages back to raw response bytes.
+    pub async fn stream_isolate_rpc_call_vec(
+        &self,
+        method_name: &str,
+        request_stream: Request<impl futures::Stream<Item = Vec<u8>> + Send + Unpin + 'static>,
+    ) -> Result<
+        Response<
+            std::pin::Pin<
+                Box<dyn futures::Stream<Item = Result<Vec<u8>, Status>> + Send + 'static>,
+            >,
+        >,
+        Status,
+    > {
         let this = self.clone();
         let method_name = method_name.to_string();
         let ipc_message_id = rand::random::<u64>();
 
-        let invoke_ez_stream = request_stream.into_inner().then(move |req| {
+        let invoke_ez_stream = request_stream.into_inner().then(move |request_bytes| {
             let this = this.clone();
             let method_name = method_name.clone();
-            let request_bytes = req.encode_to_vec();
             async move {
                 this.create_invoke_ez_request(ipc_message_id, method_name, request_bytes).await
             }
@@ -226,7 +259,7 @@ impl RpcHandler {
         let shm_pool = self.shm_pool.clone();
         let mapped_response_stream = response_stream.map(move |res| {
             let response = res?;
-            decode_invoke_ez_response(shm_pool.as_ref(), &response)
+            extract_invoke_ez_response(shm_pool.as_ref(), &response)
         });
 
         Ok(Response::new(Box::pin(mapped_response_stream)))

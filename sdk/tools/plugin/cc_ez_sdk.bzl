@@ -100,6 +100,7 @@ def ez_isolate_service(
     tags = kwargs.pop("tags", [])
     if "manual" not in tags:
         tags.append("manual")
+    testonly = kwargs.get("testonly", False)
     ez_sdk_backend_protoc(
         name = name_proto,
         protos = protos,
@@ -107,6 +108,7 @@ def ez_isolate_service(
         protoc_struct = protoc_struct,
         services = services,
         tags = tags,
+        testonly = testonly,
     )
     if contains_cpp_src_file:
         filter_files(
@@ -114,12 +116,14 @@ def ez_isolate_service(
             srcs = [name_proto],
             extensions = ["cpp", "cc"],
             tags = tags,
+            testonly = testonly,
         )
     filter_files(
         name = name + "_cc_hdrs",
         srcs = [name_proto],
         extensions = ["h"],
         tags = tags,
+        testonly = testonly,
     )
     cc_library(
         name = name,

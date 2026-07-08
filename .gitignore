@@ -27,5 +27,3 @@ docker-buildx*
 coverage.log
 # Compiled by isolate_launcher.sh
 **/dist/artifacts/isolate_rootfs.tar
-# Rules/Skills created for Agents
-.agents/

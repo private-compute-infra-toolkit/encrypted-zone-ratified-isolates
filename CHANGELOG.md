@@ -2,6 +2,75 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## 0.11.0 (2026-07-08)
+
+
+### Approver
+
+* **approver:** Enable traces in Approver isolate
+
+
+### Anonymous Token Service
+
+* **ats:** Enable traces in ATS isolate
+
+
+### Dependencies
+
+* **deps:** Bump version of tokio-retry crate to 0.3.2
+* **deps:** move base image reference to SDK
+* **deps:** Update DevKit to release-3.10.0
+* **deps:** Update versions for consistency
+
+
+### SDK
+
+* **sdk:** configure metrics retries and make setup failures fatal
+* **sdk:** handle tracing setup errors and configure retries
+* **sdk:** Pass through testonly in macros
+* **sdk:** support raw byte stream RPCs
+
+
+### Traces
+
+* **traces:** Add /IsolateServer.dispatch_stream span
+* **traces:** Add dispatch_unary span
+* **traces:** Add start_noise_session_span
+* **traces:** Add traces propagation in approver
+* **traces:** Enable traces in nsm and crypto_oracle
+* **traces:** Propagate context InvokeEzRequest
+* **traces:** Propagate correct trace context from approver
+
+
+### TLS Session Manager
+
+* **tsm:** Add dependency on setup_isolate
+* **tsm:** Add integration test for avs key source
+* **tsm:** Add key-source flag and implementation
+* **tsm:** Add missing buf formatting ignore
+* **tsm:** dynamic gRPC method invocation
+* **tsm:** Fix FIFO / AVS cert fetch race cond
+* **tsm:** Test retries rather than fixed sleep
+
+
+### Features
+
+* add allocation error logs to ShmSlabPool
+* **pubsub_broker:** Define PubSubBroker proto
+* **setup_isolate:** Add fields in ez_mtls
+* **setup_isolate:** Add isolate binary
+* **setup_isolate:** Add operator role
+* **setup_isolate:** Add PES root certificates
+* **setup_isolate:** Implement fetch frontend TLS
+* **setup_isolate:** Implement fetch mTLS
+* **setup_isolate:** OCI packaging
+* **setup_isolate:** Remove rust bin _bin suffix
+* **setup_isolate:** Remove unused mtls fields
+* **setup_isolate:** Rename isolate package
+* **setup_isolate:** Use correct AVS name
+* Test path cleanup improvements
+* Update PubSubBroker proto
+
 ## 0.10.0 (2026-06-16)
 
 

@@ -39,3 +39,10 @@ alias(
     actual = "@boringssl//:ssl",
     visibility = ["//visibility:public"],
 )
+
+# Alias to allow other workspaces to reference the base image without importing rules_oci directly.
+alias(
+    name = "isolate_runtime_ubuntu_base",
+    actual = "@isolate_runtime_ubuntu_base",
+    visibility = ["//visibility:public"],
+)

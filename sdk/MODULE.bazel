@@ -30,14 +30,14 @@ local_repository(
     path = "functionaltest-system",
 )
 
-bazel_dep(name = "abseil-cpp", version = "20260107.0", repo_name = "com_google_absl")
+bazel_dep(name = "abseil-cpp", version = "20260107.1", repo_name = "com_google_absl")
 bazel_dep(name = "aspect_bazel_lib", version = "2.20.0")
-bazel_dep(name = "bazel_skylib", version = "1.8.1")
+bazel_dep(name = "bazel_skylib", version = "1.8.2")
 bazel_dep(name = "gazelle", version = "0.37.0")
 bazel_dep(name = "grpc", version = "1.78.0")
 bazel_dep(name = "protobuf", version = "31.1", repo_name = "com_google_protobuf")
 bazel_dep(name = "rules_buf", version = "0.5.2")
-bazel_dep(name = "rules_cc", version = "0.2.0")
+bazel_dep(name = "rules_cc", version = "0.2.17")
 bazel_dep(name = "rules_oci", version = "2.0.1")
 bazel_dep(name = "rules_pkg", version = "1.0.1")
 bazel_dep(name = "rules_proto", version = "7.1.0")
@@ -48,8 +48,8 @@ bazel_dep(name = "rules_rust", version = "0.61.0")
 bazel_dep(name = "rules_rust_prost", version = "0.61.0")
 bazel_dep(name = "toolchains_protoc", version = "0.4.3")
 bazel_dep(name = "googleapis", version = "0.0.0-20260130-c0fcb356")
-bazel_dep(name = "googletest", version = "1.17.0", repo_name = "com_google_googletest")
-bazel_dep(name = "boringssl", version = "0.20250415.0")
+bazel_dep(name = "googletest", version = "1.17.0.bcr.2", repo_name = "com_google_googletest")
+bazel_dep(name = "boringssl", version = "0.20260413.0")
 
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
@@ -95,8 +95,6 @@ register_toolchains(
     "//toolchains:prost_toolchain",
     "//toolchains:proto_toolchain",
 )
-
-register_toolchains("@rust_toolchains//:all")
 
 # Create a repo for all crates used by Cargo-enabled targets, under "crates"
 crate = use_extension(
@@ -164,7 +162,7 @@ crate.spec(
 )
 crate.spec(
     package = "tokio-retry",
-    version = "0.3.0",
+    version = "0.3.2",
 )
 crate.spec(
     default_features = False,

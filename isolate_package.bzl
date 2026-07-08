@@ -58,7 +58,7 @@ def isolate_package(base_name, binary, install_path = "/usr/local/bin"):
 
     oci_image(
         name = "{}_image".format(isolate_name),
-        base = "@isolate_runtime_ubuntu_base",
+        base = "@privacy-sandbox-ez-sdk//:isolate_runtime_ubuntu_base",
         tars = [":{}_tar".format(isolate_name), ":{}_fix_ld_symlink".format(isolate_name)],
     )
 

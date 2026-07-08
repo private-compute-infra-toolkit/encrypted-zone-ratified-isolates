@@ -28,7 +28,7 @@ bazel_dep(name = "rules_python", version = "1.9.0")
 bazel_dep(name = "rules_rust", version = "0.63.0")
 bazel_dep(name = "rules_rust_prost", version = "0.63.0")
 bazel_dep(name = "toolchains_protoc", version = "0.5.0")
-bazel_dep(name = "boringssl", version = "0.20250415.0")
+bazel_dep(name = "boringssl", version = "0.20260413.0")
 bazel_dep(name = "sdk-patches", version = "0.0.0")
 local_path_override(
     module_name = "sdk-patches",
@@ -95,8 +95,6 @@ register_toolchains(
     "@//toolchains:proto_toolchain",
 )
 
-register_toolchains("@rust_toolchains//:all")
-
 # Create a repo for all crates used by Cargo-enabled targets, under "crates"
 crate = use_extension(
     "@rules_rust//crate_universe:extension.bzl",
@@ -130,9 +128,6 @@ crate.spec(
 crate.from_specs(name = "oracle_crates")
 use_repo(crate, "crates", "oracle_crates")
 
-oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
-use_repo(oci, "isolate_runtime_ubuntu_base")
-
 # Prevent version skew by matching protoc version to protobuf version, as C++ is the only lang that
 # has no cross-version runtime guarantee:
 # https://protobuf.dev/support/cross-version-runtime-guarantee/#cpp
@@ -161,5 +156,3 @@ single_version_override(
     patches = ["//:grpc_python_versions.patch"],
     version = "1.78.0",
 )
-
-local_repository = use_repo_rule("@bazel_tools//tools/build_defs/repo:local.bzl", "local_repository")

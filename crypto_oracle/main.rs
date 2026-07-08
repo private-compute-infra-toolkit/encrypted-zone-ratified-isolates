@@ -24,7 +24,7 @@ use crypto_oracle_sdk::{
 #[command(version, about)]
 struct Args {
     /// OTel traces endpoint
-    #[arg(long)]
+    #[arg(long, default_value = "unix:///enforcer-isolate-shared/traces-otlp.sock")]
     otel_traces_endpoint: Option<String>,
     /// OTel traces sample ratio
     #[arg(

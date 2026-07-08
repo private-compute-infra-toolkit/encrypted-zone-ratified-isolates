@@ -98,11 +98,14 @@ def ez_client_server_bridge(
         templates_dir = default_templates_dir,
     )
 
+    testonly = kwargs.get("testonly", False)
+
     ez_sdk_server_bridge_protoc(
         name = name_proto,
         protos = protos,
         proto_basename = proto_basename,
         protoc_struct = protoc_struct,
+        testonly = testonly,
     )
 
     crate_root = "{}_lib.rs".format(proto_basename)
@@ -114,6 +117,7 @@ def ez_client_server_bridge(
         name = name + "_copy_crate_root",
         srcs = [":" + name_proto],
         outs = [copy_crate_root],
+        testonly = testonly,
         # CORRECTED COMMAND:
         cmd = """
         for f in $(locations :{}); do
@@ -199,21 +203,29 @@ def ez_isolate_service(
     else:
         crate_root = "{}_lib.rs".format(proto_basename)
 
+    # Propagate the 'testonly' attribute to all intermediate generated targets.
+    # If the user passes a testonly protobuf, Bazel requires ALL downstream
+    # intermediate generated rules (protoc and genrule) to also be marked testonly,
+    # otherwise Bazel throws a "non-test depends on testonly target" analysis error.
+    testonly = kwargs.get("testonly", False)
     ez_sdk_backend_protoc(
         name = name_proto,
         protos = protos,
         proto_basename = proto_basename,
         protoc_struct = protoc_struct,
+        testonly = testonly,
     )
 
     copy_crate_root = "copy_{}".format(crate_root)
 
     # Copy crate root to a new, non-conflicting file.
     # The 'cmd' attribute uses a shell 'for' loop to find the correct file.
+    # Propagate the 'testonly' attribute to the intermediate genrule to keep the dependency graph sound.
     native.genrule(
         name = name + "_copy_crate_root",
         srcs = [":" + name_proto],
         outs = [copy_crate_root],
+        testonly = testonly,
         # CORRECTED COMMAND:
         cmd = """
         for f in $(locations :{}); do

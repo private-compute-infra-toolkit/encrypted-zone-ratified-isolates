@@ -96,9 +96,9 @@ rust_test(
     # This is important because we use global states
     args = ["--test-threads=1"],
     env = {
-        "CLIENT_UDS_PATH": "/dev/shm/ez_approver_test/test_client.uds",
-        "READY_FIFO_PATH": "/dev/shm/ez_approver_test/test_ready.fifo",
-        "SERVER_UDS_PATH": "/dev/shm/ez_approver_test/test_server.uds",
+        "CLIENT_UDS_PATH": "/dev/shm/ez_isolate_server_test/test_client.uds",
+        "READY_FIFO_PATH": "/dev/shm/ez_isolate_server_test/test_ready.fifo",
+        "SERVER_UDS_PATH": "/dev/shm/ez_isolate_server_test/test_server.uds",
     },
     tags = ["exclusive"],
     deps = [
@@ -152,7 +152,7 @@ rust_test(
     # This is important because we use global states
     args = ["--test-threads=1"],
     env = {
-        "CLIENT_UDS_PATH": "/dev/shm/ez_approver_test/test_client.uds",
+        "CLIENT_UDS_PATH": "/dev/shm/ez_isolate_client_test/test_client.uds",
     },
     tags = ["exclusive"],
     deps = [

@@ -138,8 +138,6 @@ pub struct ShmSlabPool {
     // slots. We start at the last bitmask with successful allocations, skipping
     // previously full bitmasks
     search_index: AtomicU64,
-    #[allow(dead_code)]
-    file_name: String,
 }
 
 impl ShmSlabPool {
@@ -211,7 +209,6 @@ impl ShmSlabPool {
             header_mmap,
             data_mmap,
             search_index: AtomicU64::new(0),
-            file_name: options.file_name,
         })
     }
 
@@ -241,12 +238,12 @@ impl ShmSlabPool {
 
         let attempt = std::sync::atomic::AtomicU32::new(1);
         let action = || {
-            #[allow(unused_variables)]
             let attempt_val = attempt.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            log::info!("Attempting slot allocation: {}", attempt_val);
             async move { self.try_allocate_slots(slots_needed) }
         };
 
-        Retry::spawn(retry_strategy, action).await.map_err(|e| {
+        Retry::start(retry_strategy, action).await.map_err(|e| {
             log::warn!("Slot allocation failed: {:?}", e);
             ShmSlabPoolError::AllocationTimeout
         })
@@ -346,6 +343,7 @@ impl ShmSlabPool {
                         // CAS failure returns the current mask, we update our local copy so we try again.
                         Err(actual_mask) => {
                             cas_failures += 1;
+                            log::warn!("CAS failure #{} for current bitmask", cas_failures);
                             if cas_failures >= CAS_FAILURE_LIMIT {
                                 log::warn!("CAS failure limit reached for current bitmask, moving on to next bitmask");
                                 break;

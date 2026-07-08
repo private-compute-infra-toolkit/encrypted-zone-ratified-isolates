@@ -12,13 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::telemetry::grpc_connector::{
-    GrpcChannelPool, DEFAULT_CONNECT_RETRY_COUNT, DEFAULT_CONNECT_RETRY_DELAY_MS,
-    DEFAULT_CONNECT_RETRY_SCALING, DEFAULT_POOL_SIZE,
-};
+use crate::telemetry::grpc_connector::{GrpcChannelPool, DEFAULT_POOL_SIZE};
 use opentelemetry::global;
 use opentelemetry_otlp::{WithExportConfig, WithTonicConfig};
 use opentelemetry_sdk::Resource;
+
+const CONNECT_RETRY_COUNT: usize = 10;
+const CONNECT_RETRY_DELAY_MS: u64 = 5000;
+const CONNECT_RETRY_SCALING: u64 = 1;
 
 /// Initializes the global OpenTelemetry MeterProvider.
 ///
@@ -47,19 +48,16 @@ pub async fn setup_metrics(service_name: &str, endpoint: Option<String>) {
         let channel_pool = match GrpcChannelPool::new(
             endpoint.to_string(),
             DEFAULT_POOL_SIZE,
-            DEFAULT_CONNECT_RETRY_COUNT,
-            DEFAULT_CONNECT_RETRY_DELAY_MS,
-            DEFAULT_CONNECT_RETRY_SCALING,
+            CONNECT_RETRY_COUNT,
+            CONNECT_RETRY_DELAY_MS,
+            CONNECT_RETRY_SCALING,
         )
         .await
         {
             Ok(pool) => pool,
             Err(e) => {
-                log::warn!(
-                    "Skipping OTel metrics initialization: failed to construct channel pool: {}",
-                    e
-                );
-                return;
+                log::error!("FATAL: Failed to initialize OTel metrics: {:?}", e);
+                std::process::exit(1);
             }
         };
         let channel = channel_pool.next_channel();
@@ -73,8 +71,11 @@ pub async fn setup_metrics(service_name: &str, endpoint: Option<String>) {
     let exporter = match exporter_res {
         Ok(exp) => exp,
         Err(e) => {
-            log::warn!("Skipping OTel metrics initialization: failed to construct exporter: {}", e);
-            return;
+            log::error!(
+                "FATAL: Failed to initialize OTel metrics: failed to construct exporter: {:?}",
+                e
+            );
+            std::process::exit(1);
         }
     };
 

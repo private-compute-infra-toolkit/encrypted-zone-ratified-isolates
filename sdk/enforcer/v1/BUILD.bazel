@@ -310,10 +310,6 @@ proto_library(
     name = "ez_mtls_proto",
     srcs = ["ez_mtls.proto"],
     visibility = ["//visibility:public"],
-    deps = [
-        "@oak//proto/attestation:endorsement_proto",
-        "@oak//proto/attestation:evidence_proto",
-    ],
 )
 
 rust_prost_library(
@@ -340,10 +336,6 @@ cpp_grpc_library(
     generate_mocks = True,
     protos = [
         ":ez_mtls_proto",
-        "@oak//proto:digest_proto",
-        "@oak//proto/attestation:endorsement_proto",
-        "@oak//proto/attestation:eventlog_proto",
-        "@oak//proto/attestation:evidence_proto",
     ],
     visibility = ["//visibility:public"],
 )

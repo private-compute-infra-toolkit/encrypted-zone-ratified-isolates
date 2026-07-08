@@ -47,7 +47,7 @@ static CLIENT_UDS_PATH: Lazy<String> =
 struct TestHarness {
     client: Arc<IsolateEzBridgeSdkClient>,
     mock_enforcer_server: MockIsolateEzBridgeServer,
-    mock_enforcer_handle: JoinHandle<Result<(), anyhow::Error>>,
+    mock_enforcer_handle: Option<JoinHandle<Result<(), anyhow::Error>>>,
     mock_enforcer_shutdown_tx: Sender<()>,
 }
 
@@ -86,17 +86,19 @@ impl TestHarness {
         Ok(Self {
             client: Arc::new(IsolateEzBridgeSdkClient::new().await?),
             mock_enforcer_server,
-            mock_enforcer_handle,
+            mock_enforcer_handle: Some(mock_enforcer_handle),
             mock_enforcer_shutdown_tx,
         })
     }
 
-    async fn stop(self) -> Result<(), Box<dyn Error>> {
+    async fn stop(mut self) -> Result<(), Box<dyn Error>> {
         self.mock_enforcer_shutdown_tx.send(()).await.context("Failed to send shutdown signal")?;
-        self.mock_enforcer_handle
-            .await
-            .context("Failed to wait for mock enforcer to shut down")?
-            .context("Mock enforcer failed")?;
+        if let Some(handle) = self.mock_enforcer_handle.take() {
+            handle
+                .await
+                .context("Failed to wait for mock enforcer to shut down")?
+                .context("Mock enforcer failed")?;
+        }
         Ok(())
     }
 }
@@ -492,4 +494,52 @@ async fn test_rpc_handler_stream_with_shm() {
     std::env::remove_var("EZ_SHM_ENFORCER_WRITES_PATH");
     std::env::remove_var("EZ_SHM_ISOLATE_WRITES_PATH");
     std::env::remove_var("EZ_SHM_THRESHOLD");
+}
+
+#[tokio::test]
+async fn test_rpc_handler_stream_vec() {
+    let harness = TestHarness::start().await.expect("Test harness should start");
+
+    let rpc_handler = RpcHandler::new(
+        harness.client.clone(),
+        "test_operator_domain".to_string(),
+        "test_service_name".to_string(),
+        DataScopeType::UserPrivate,
+    );
+
+    let request_stream = tokio_stream::iter(vec![vec![1, 2, 3], vec![4, 5, 6], vec![7, 8, 9]]);
+
+    let mut response_stream = rpc_handler
+        .stream_isolate_rpc_call_vec("test_method", Request::new(request_stream))
+        .await
+        .expect("Failed to invoke rpc stream vec call")
+        .into_inner();
+
+    let mut responses = Vec::new();
+    while let Some(response) = response_stream.next().await {
+        responses.push(response.expect("Failed to get response"));
+    }
+
+    assert_eq!(responses.len(), 3);
+    assert_eq!(responses[0], vec![1, 2, 3]);
+    assert_eq!(responses[1], vec![4, 5, 6]);
+    assert_eq!(responses[2], vec![7, 8, 9]);
+
+    assert_eq!(harness.mock_enforcer_server.unary_call_count(), 0);
+    assert_eq!(harness.mock_enforcer_server.stream_call_count(), 1);
+    assert_eq!(harness.mock_enforcer_server.stream_message_count(), 3);
+
+    harness.stop().await.expect("Test harness should stop");
+}
+
+impl Drop for TestHarness {
+    fn drop(&mut self) {
+        let path = Path::new(CLIENT_UDS_PATH.as_str());
+        if path.exists() {
+            let _ = std::fs::remove_file(path);
+        }
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::remove_dir(parent);
+        }
+    }
 }

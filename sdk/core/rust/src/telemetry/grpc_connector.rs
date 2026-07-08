@@ -212,7 +212,7 @@ async fn connect_uds(
         }
     };
 
-    Retry::spawn(retry_strategy, connect_action).await
+    Retry::start(retry_strategy, connect_action).await
 }
 
 /// Handles connecting to a service via a Unix Domain Socket with TLS.
@@ -262,7 +262,7 @@ async fn connect_uds_tls(
         }
     };
 
-    Retry::spawn(retry_strategy, connect_action).await
+    Retry::start(retry_strategy, connect_action).await
 }
 
 /// Handles connecting to a service via TCP.
@@ -276,7 +276,7 @@ async fn connect_tcp(
     let connect_action =
         || async { endpoint.connect().await.context("Failed to connect to TCP endpoint") };
 
-    Retry::spawn(retry_strategy, connect_action).await
+    Retry::start(retry_strategy, connect_action).await
 }
 
 /// Parses the `grpc-timeout` header from gRPC metadata.

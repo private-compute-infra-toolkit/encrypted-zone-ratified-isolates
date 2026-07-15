@@ -73,6 +73,7 @@ impl RpcHandler {
         ipc_message_id: u64,
         method_name: String,
         request_bytes: Vec<u8>,
+        metadata_headers: std::collections::HashMap<String, String>,
     ) -> InvokeEzRequest {
         let mut delivery_method = None;
         if let Some(shm_pool) = &self.shm_pool {
@@ -87,7 +88,6 @@ impl RpcHandler {
             delivery_method =
                 Some(DeliveryMethod::InlineData(EzPayloadData { datagrams: vec![request_bytes] }));
         };
-        let metadata_headers = crate::telemetry::traces::get_trace_context();
         InvokeEzRequest {
             control_plane_metadata: Some(ControlPlaneMetadata {
                 ipc_message_id,
@@ -166,9 +166,15 @@ impl RpcHandler {
         request_bytes: Vec<u8>,
     ) -> Result<InvokeEzResponse, Status> {
         let ipc_message_id = rand::random::<u64>();
+        let metadata_headers = crate::telemetry::traces::get_trace_context();
 
         let request = self
-            .create_invoke_ez_request(ipc_message_id, method_name.to_string(), request_bytes)
+            .create_invoke_ez_request(
+                ipc_message_id,
+                method_name.to_string(),
+                request_bytes,
+                metadata_headers,
+            )
             .await;
 
         let response = self.client.invoke_ez(request).await?;
@@ -246,12 +252,20 @@ impl RpcHandler {
         let this = self.clone();
         let method_name = method_name.to_string();
         let ipc_message_id = rand::random::<u64>();
+        let metadata_headers = crate::telemetry::traces::get_trace_context();
 
         let invoke_ez_stream = request_stream.into_inner().then(move |request_bytes| {
             let this = this.clone();
             let method_name = method_name.clone();
+            let metadata_headers = metadata_headers.clone();
             async move {
-                this.create_invoke_ez_request(ipc_message_id, method_name, request_bytes).await
+                this.create_invoke_ez_request(
+                    ipc_message_id,
+                    method_name,
+                    request_bytes,
+                    metadata_headers,
+                )
+                .await
             }
         });
 

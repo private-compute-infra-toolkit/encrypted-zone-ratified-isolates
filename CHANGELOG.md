@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## 0.12.0 (2026-07-15)
+
+
+### Anonymous Token Service
+
+* **ats:** Propagate OTel context in token extraction
+
+
+### SDK
+
+* **sdk:** Propagate OTel trace context synchronously in stream calls
+
+
+### Traces
+
+* **traces:** trusted aratea traffic
+
 ## 0.11.0 (2026-07-08)
 
 

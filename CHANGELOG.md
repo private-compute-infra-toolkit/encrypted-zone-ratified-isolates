@@ -2,6 +2,32 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## 0.13.0 (2026-07-27)
+
+
+### Dependencies
+
+* **deps:** add pcit/api repository as submodule
+* **deps:** Upgrade Project Oak for RSA PES certificate support
+
+
+### Features
+
+* add ValidateIsolateEndorsement RPC to SetupService
+* implement PES endorsement verification API
+* implement ValidateIsolateEndorsement RPC in setup_service
+* **quota_uta:** add core rate limiter logic
+* **quota_uta:** Add missing bazel configuration files
+* **quota_uta:** add proto definitions and rules
+* **quota_uta:** add server entry point and macro
+* **quota_uta:** add service handlers
+* validate expected claims in PES confirmation
+
+
+### Bug Fixes
+
+* **nsm:** connection leaks on ungraceful disconnects or cancellations
+
 ## 0.12.0 (2026-07-15)
 
 

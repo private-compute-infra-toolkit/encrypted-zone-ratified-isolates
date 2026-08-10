@@ -152,7 +152,7 @@ type GenerateKeyResponseResult = Result<Response<GenerateKeyResponse>, tonic::St
 type DeleteKeyResponseResult = Result<Response<DeleteKeyResponse>, tonic::Status>;
 type RefreshKeyResponseResult = Result<Response<RefreshKeyResponse>, tonic::Status>;
 type GetPublicKeyResponseResult = Result<Response<GetPublicKeyResponse>, tonic::Status>;
-type SignResposneResult = Result<Response<SignResponse>, tonic::Status>;
+type SignResponseResult = Result<Response<SignResponse>, tonic::Status>;
 type VerifyResponseResult = Result<Response<VerifyResponse>, tonic::Status>;
 
 #[tonic::async_trait]
@@ -292,7 +292,7 @@ impl OracleApi for CryptoOracle {
     // Does not allow for scope relaxation (key scope weaker than message scope)
     // Currently assumes that the requested message payload has only one message
     #[tracing::instrument(name = "CryptoOracle.sign", skip_all)]
-    async fn sign(&self, request: Request<SignRequest>) -> SignResposneResult {
+    async fn sign(&self, request: Request<SignRequest>) -> SignResponseResult {
         let request = request.into_inner();
 
         let (key_id, _) = parse_key_id(request.key_id)?;
@@ -566,7 +566,7 @@ fn sign_with_key(
     message_data: Vec<u8>,
     verify_key_option: Option<Vec<u8>>,
     scope: DataScopeType,
-) -> SignResposneResult {
+) -> SignResponseResult {
     let signer = match new_signer(signing_key) {
         Ok(signer) => signer,
         Err(e) => return create_sign_response_tink("Failure to create signer", e),
@@ -624,16 +624,16 @@ fn create_sign_response_ok(
     signature: Vec<u8>,
     scope: DataScopeType,
     verification_key: Option<Vec<u8>>,
-) -> SignResposneResult {
+) -> SignResponseResult {
     Ok(Response::new(SignResponse {
         signature: Some(to_payload(signature, scope)),
         verification_key: verification_key.map(|key| to_payload(key, DataScopeType::Public)),
     }))
 }
-fn create_sign_response_err(code: Code, message: &str) -> SignResposneResult {
+fn create_sign_response_err(code: Code, message: &str) -> SignResponseResult {
     Err(tonic::Status::new(tonic::Code::from_i32(code as i32), message))
 }
-fn create_sign_response_tink(message: &str, err: TinkError) -> SignResposneResult {
+fn create_sign_response_tink(message: &str, err: TinkError) -> SignResponseResult {
     Err(tonic::Status::internal(format!("{message}: {err}")))
 }
 

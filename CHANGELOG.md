@@ -2,6 +2,56 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## 0.14.0 (2026-08-10)
+
+
+### Dependencies
+
+* **deps:** Update DevKit to release-3.11.0
+
+
+### Pubsub Broker
+
+* **pubsub_broker:** Add MODULE.bazel.lock for pubsub_broker
+* **pubsub_broker:** add OCI isolate packaging rules for pubsub_broker
+* **pubsub_broker:** downstream parameter updates
+* **pubsub_broker:** report validation path
+* **pubsub_broker:** session manager service
+
+
+### Quota and UTA
+
+* **quota_uta:** add allowed_project_ids to Allowlist
+* **quota_uta:** Add Allowlist struct and initialization in main
+* **quota_uta:** Add multi_get_tokens passthrough
+* **quota_uta:** Add parameters with operator domains
+* **quota_uta:** add validation methods and tests for Allowlist
+* **quota_uta:** align LLVM toolchain with other isolates
+* **quota_uta:** Cache and reuse QuotaServer stub with OnceLock
+* **quota_uta:** Clean protobuffs
+* **quota_uta:** define minimal proto for AdmissionControlService
+* **quota_uta:** define minimal quotas.proto for QuotaServer
+* **quota_uta:** implement ClientFlagsService pass-through
+* **quota_uta:** Make files symlinks like in other isolates
+* **quota_uta:** Move services to service.rs
+* **quota_uta:** pass-through stubs for QuotaServer and UtaAdmission
+* **quota_uta:** Remove everything, keep skeleton
+
+
+### Features
+
+* add binary target and main entry point for pubsub_broker
+* add CLI args and telemetry setup for setup isolate
+* implement validation report handler in report module
+* Initialize new integration_test directory
+* initialize PubSub Broker RI
+* Update PES prod root cert
+
+
+### Documentation
+
+* **quota_uta:** align proto tags with canonical main protos
+
 ## 0.13.0 (2026-07-27)
 
 

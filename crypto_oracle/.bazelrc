@@ -38,7 +38,7 @@ build:run_all_tests --cache_test_results=no
 
 test --test_output=errors
 test --test_verbose_timeout_warnings
-# b/392436940 - Make rust_test --nocapture by default
+# TODO: Make rust_test --nocapture by default
 test --test_env=RUST_TEST_NOCAPTURE=1
 
 # Clippy

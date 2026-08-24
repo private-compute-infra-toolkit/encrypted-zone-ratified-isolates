@@ -2,6 +2,87 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## 0.15.0 (2026-08-24)
+
+
+### Approver
+
+* **approver:** add coverage configuration to bazelrc
+* **approver:** align LLVM toolchain with other isolates
+
+
+### Anonymous Token Service
+
+* **ats:** add coverage configuration to bazelrc
+* **ats:** align LLVM toolchain with other isolates
+
+
+### Dependencies
+
+* **deps:** add moka crate dependency to quota_uta
+
+
+### Noise Session Manager
+
+* **noise:** add coverage configuration to bazelrc
+
+
+### Crypto Oracle
+
+* **oracle:** add coverage configuration to bazelrc
+* **oracle:** align LLVM toolchain with other isolates
+
+
+### Pubsub Broker
+
+* **pubsub_broker:** add coverage configuration to bazelrc
+
+
+### Quota and UTA
+
+* **quota_uta:** Add allowlist validation
+* **quota_uta:** Add field sanitization
+* **quota_uta:** add missing proto fields and RPCs
+* **quota_uta:** Add quota_uta server initialization
+* **quota_uta:** allow configuring cache size via CLI in main.rs
+* **quota_uta:** convert uninspected fields to opaque bytes
+* **quota_uta:** implement Admit pass-through for UTA admission
+* **quota_uta:** implement PutTokens and ClientFlags pass-through
+* **quota_uta:** implement ReportCompletion pass-through for UTA
+* **quota_uta:** Strip agile serving and inline backend overrides
+
+
+### Setup Isolate
+
+* **setup:** add coverage configuration to bazelrc
+
+
+### SDK
+
+* **sdk:** add coverage configuration to bazelrc
+* **sdk:** align LLVM toolchain with other isolates
+
+
+### Trusted Aratea Traffic
+
+* **tat:** add coverage configuration to bazelrc
+* **tat:** align LLVM toolchain with other isolates
+
+
+### TLS Session Manager
+
+* **tsm:** add coverage configuration to bazelrc
+* **tsm:** propagate inner stream errors to client
+
+
+### Features
+
+* add bounded consume-on-read Cache in quota_uta
+* add OpenTelemetry metrics for setup isolate
+* add state module and stamp packing helpers in quota_uta
+* enable line coverage checks across all ratified isolates
+* synchronize pending tasks on MokaCache len in quota_uta
+
 ## 0.14.0 (2026-08-10)
 
 

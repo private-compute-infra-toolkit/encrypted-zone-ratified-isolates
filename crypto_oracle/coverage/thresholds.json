@@ -1,0 +1,8 @@
+{
+  "src/crypto_oracle.rs": {
+    "lines": 80
+  },
+  "src/status.rs": {
+    "lines": 0
+  }
+}

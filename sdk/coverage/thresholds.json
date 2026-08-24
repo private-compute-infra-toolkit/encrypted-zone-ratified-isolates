@@ -1,0 +1,20 @@
+{
+  "core/rust/src/rpc_handler.rs": {
+    "lines": 80
+  },
+  "core/rust/src/telemetry/grpc_connector.rs": {
+    "lines": 20
+  },
+  "core/rust/src/telemetry/metrics.rs": {
+    "lines": 0
+  },
+  "core/rust/src/telemetry/traces.rs": {
+    "lines": 70
+  },
+  "core/rust/src/utils.rs": {
+    "lines": 70
+  },
+  "core/rust/test/test_utils.rs": {
+    "lines": 80
+  }
+}

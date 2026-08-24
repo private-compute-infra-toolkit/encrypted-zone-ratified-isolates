@@ -13,8 +13,12 @@
 # limitations under the License.
 
 common --enable_bzlmod
+common --experimental_cc_static_library
 common --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
 common --experimental_proto_descriptor_sets_include_source_info
+build --incompatible_enable_cc_toolchain_resolution
+build --incompatible_enable_proto_toolchain_resolution
+build --@com_google_protobuf//bazel/toolchains:prefer_prebuilt_protoc=true
 
 build --config=clippy
 build --config=rustfmt
@@ -26,6 +30,7 @@ build --announce_rc
 build --verbose_failures
 build --compilation_mode=opt
 build --color=yes
+build --@toolchains_llvm_bootstrapped//config:experimental_stub_libgcc_s=true
 
 # Hide warnings for external libraries
 build --output_filter='^//((?!(external):).)*$'
@@ -58,3 +63,4 @@ build:cpp --client_env=BAZEL_CXXOPTS=-std=c++20
 build:cpp --cxxopt=-std=c++20
 
 coverage --cache_test_results=no
+coverage --features=-coverage

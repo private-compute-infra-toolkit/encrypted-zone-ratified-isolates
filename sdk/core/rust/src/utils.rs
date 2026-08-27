@@ -98,6 +98,7 @@ pub async fn payload_bytes_to_invoke_isolate_response(
             }],
         }),
         isolate_output: Some(EzHybridPayload { delivery_method }),
+        response_extensions: Default::default(),
     }
 }
 
@@ -208,6 +209,7 @@ pub fn message_stream_to_invoke_isolate_stream<T: Message + 'static>(
                     datagrams: vec![bytes],
                 })),
             }),
+            response_extensions: Default::default(),
         })
     });
     Box::pin(mapped_stream)

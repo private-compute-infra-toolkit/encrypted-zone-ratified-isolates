@@ -80,6 +80,8 @@ message InvokeEzResponse {
   ControlPlaneMetadata control_plane_metadata = 1;
   EzPayloadIsolateScope ez_response_iscope = 2;
   EzHybridPayload ez_response_payload = 4;
+  // Serialized RPC extensions.
+  bytes response_extensions = 5;
 }
 
 message CreateMemshareRequest {

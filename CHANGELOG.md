@@ -2,6 +2,57 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## 0.17.0 (2026-09-17)
+
+
+### Quota and UTA
+
+* **quota_uta:** add BeyondConfig proto for CDPush
+* **quota_uta:** add TTL to MokaCache
+* **quota_uta:** allowlist real QuotaServer group IDs
+* **quota_uta:** allowlist the QuotaServer project ID
+* **quota_uta:** bind RPC context fields to admission state
+* **quota_uta:** bind the structured completion token to state
+* **quota_uta:** bind the UTA-issued admission ID to admission state
+* **quota_uta:** decode the canonical UTA event ID wire format
+* **quota_uta:** decompose composite QuotaServer user IDs
+* **quota_uta:** encapsulate and authenticate UTA admission state
+* **quota_uta:** encapsulate quota session state
+* **quota_uta:** fail closed when ReportCompletion carries no token
+* **quota_uta:** forward the validated QuotaServer project ID
+* **quota_uta:** implement allowlist with hardcoded values for UTA
+* **quota_uta:** implement DynamicAllowlist and PubSubConfigSubscriber
+* **quota_uta:** implement metric quantization for UTA
+* **quota_uta:** integrate dynamic configuration with handlers and CLI
+* **quota_uta:** parse BeyondConfig and build dynamic Allowlist
+* **quota_uta:** pass through UTA parent_event_id
+* **quota_uta:** sanitize and filter incoming UTA requests
+* **quota_uta:** scrub google3 paths from beyond_config.proto
+* **quota_uta:** validate and bind QoS criticality on both UTA RPCs
+* **quota_uta:** wire cache TTL CLI flag and tests
+
+
+### TLS Session Manager
+
+* **tsm:** omit root CA certificate from frontend TLS chain
+
+
+### Features
+
+* **anonymous_token_spender:** add metrics module
+* **anonymous_token_spender:** instrument outbound RPCs with metrics
+* **cdpush:** implement CDPush chunking and handling
+* **nsm:** change externally_sign data scope from UserPrivate to Public
+
+
+### Documentation
+
+* **quota_uta:** detail privacy guarantees and security mitigations
+* **quota_uta:** document build and test instructions
+* **quota_uta:** document dynamic configuration protocol flow
+* **quota_uta:** refresh QuotaServer sanitization documentation
+* **quota_uta:** update architecture overview and system diagram
+
 ## 0.16.0 (2026-08-27)
 
 

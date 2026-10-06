@@ -2,6 +2,60 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## 0.18.0 (2026-10-06)
+
+
+### Approver
+
+* **approver:** add method allow-listing and audit mode to Approver
+
+
+### Anonymous Token Service
+
+* **ats:** address review comments from cl/116980
+* **ats:** forward request_metadata and extensions to Aratea isolate
+
+
+### Noise Session Manager
+
+* **noise:** forward request_metadata and extensions to server stream
+
+
+### Pubsub Broker
+
+* **pubsub_broker:** configure OTel traces and metrics
+* **pubsub_broker:** log a fingerprint, not the session token
+
+
+### Quota and UTA
+
+* **quota_uta:** accept the demand BAG sends
+* **quota_uta:** align UtaUserType enum values
+* **quota_uta:** allow the nonprod-default quota bucket
+* **quota_uta:** count allowlist rejections
+* **quota_uta:** encode proto2 required fields
+* **quota_uta:** initialize the SDK client on both RPC handlers
+* **quota_uta:** mirror the upstream BeyondConfig quota nesting
+* **quota_uta:** quantize beyond-gxus as micros
+* **quota_uta:** unwrap the watcher change envelope before decoding
+
+
+### SDK
+
+* **sdk:** address review comments from cl/116978
+* **sdk:** retain and propagate request_metadata and extensions
+
+
+### Features
+
+* **setup_isolate:** Support multiple PES keys
+* **setup_isolate:** Validate package filename in the artifact claim
+
+
+### Bug Fixes
+
+* **setup_isolate:** Validate the artifact claim instead of workload
+
 ## 0.17.0 (2026-09-17)
 
 

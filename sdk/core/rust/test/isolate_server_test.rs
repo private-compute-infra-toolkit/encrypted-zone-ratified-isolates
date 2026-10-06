@@ -1007,6 +1007,83 @@ async fn test_request_lifecycle_with_state_change() {
     harness.stop().await.expect("Test harness should stop");
 }
 
+#[tokio::test]
+async fn test_rpc_dispatch_retains_request_metadata_and_extensions() {
+    let mock_service = Arc::new(MockIsolateRpcService::default());
+    let dispatcher = Arc::new(RpcDispatcher::new(mock_service.clone()));
+    let harness = TestHarness::start(dispatcher).await.expect("Test harness should start");
+
+    let mut expected_metadata = std::collections::HashMap::new();
+    expected_metadata.insert("X-Geo-Location".to_string(), b"US".to_vec());
+    let expected_extensions = b"serialized_http_header_context".to_vec();
+
+    // 1. Unary RPC dispatch retains request_metadata and extensions
+    let unary_request = InvokeIsolateRequest {
+        control_plane_metadata: Some(ControlPlaneMetadata {
+            destination_service_name: "mock_service".to_string(),
+            destination_operator_domain: "mock_domain".to_string(),
+            destination_ez_instance_id: "mock_instance_id".to_string(),
+            destination_method_name: "mock_method".to_string(),
+            ipc_message_id: 1234,
+            request_metadata: expected_metadata.clone(),
+            extensions: expected_extensions.clone(),
+            ..Default::default()
+        }),
+        isolate_input: Some(EzHybridPayload {
+            delivery_method: Some(DeliveryMethod::InlineData(EzPayloadData {
+                datagrams: vec![b"hello_world".to_vec()],
+            })),
+        }),
+        ..Default::default()
+    };
+
+    let _ = harness.client.invoke_isolate(unary_request).await.expect("Failed to invoke isolate");
+    let captured_unary = mock_service
+        .last_forwarded_metadata()
+        .await
+        .expect("Unary handler should have received ForwardedControlPlaneMetadata");
+    assert_eq!(captured_unary.request_metadata, expected_metadata);
+    assert_eq!(captured_unary.extensions, expected_extensions);
+
+    // 2. Streaming RPC dispatch retains request_metadata and extensions
+    let stream_request = InvokeIsolateRequest {
+        control_plane_metadata: Some(ControlPlaneMetadata {
+            destination_operator_domain: "mock_domain".to_string(),
+            destination_service_name: "mock_service".to_string(),
+            destination_method_name: "mock_method".to_string(),
+            destination_ez_instance_id: "mock_instance_id".to_string(),
+            ipc_message_id: 1230,
+            request_metadata: expected_metadata.clone(),
+            extensions: expected_extensions.clone(),
+            ..Default::default()
+        }),
+        isolate_input: Some(EzHybridPayload {
+            delivery_method: Some(DeliveryMethod::InlineData(EzPayloadData {
+                datagrams: vec![b"hello_world".to_vec()],
+            })),
+        }),
+        ..Default::default()
+    };
+
+    let mut response_stream = harness
+        .client
+        .stream_invoke_isolate(stream::iter(vec![stream_request]))
+        .await
+        .expect("Failed to stream invoke isolate");
+    while let Some(resp) = response_stream.next().await {
+        resp.expect("Response should succeed");
+    }
+
+    let captured_stream = mock_service
+        .last_forwarded_metadata()
+        .await
+        .expect("Streaming handler should have received ForwardedControlPlaneMetadata");
+    assert_eq!(captured_stream.request_metadata, expected_metadata);
+    assert_eq!(captured_stream.extensions, expected_extensions);
+
+    harness.stop().await.expect("Test harness should stop");
+}
+
 impl<T> Drop for TestHarness<T> {
     fn drop(&mut self) {
         for path in [SERVER_UDS_PATH.as_str(), CLIENT_UDS_PATH.as_str(), READY_FIFO_PATH.as_str()] {

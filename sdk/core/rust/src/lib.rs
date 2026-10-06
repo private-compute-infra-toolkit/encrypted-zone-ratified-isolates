@@ -24,8 +24,10 @@ mod utils;
 
 pub use isolate_ez_bridge_client::IsolateEzBridgeSdkClient;
 pub use isolate_server::IsolateRpcServer;
+pub use rpc_dispatcher::current_forwarded_control_plane_metadata;
 pub use rpc_dispatcher::IsolateRpcService;
 pub use rpc_dispatcher::RpcDispatcher;
+pub use rpc_handler::ForwardedControlPlaneMetadata;
 pub use rpc_handler::RpcHandler;
 pub use shm_slab_pool::EzShmSlabPool;
 

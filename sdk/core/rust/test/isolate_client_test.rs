@@ -532,6 +532,330 @@ async fn test_rpc_handler_stream_vec() {
     harness.stop().await.expect("Test harness should stop");
 }
 
+#[tokio::test]
+async fn test_rpc_handler_propagates_request_metadata_and_extensions() {
+    let harness = TestHarness::start().await.expect("Test harness should start");
+
+    let rpc_handler = RpcHandler::new(
+        harness.client.clone(),
+        "test_operator_domain".to_string(),
+        "test_service_name".to_string(),
+        DataScopeType::UserPrivate,
+    );
+
+    let mut expected_metadata = std::collections::HashMap::new();
+    expected_metadata.insert("X-Geo-Location".to_string(), b"US".to_vec());
+    let expected_extensions = b"serialized_http_header_context".to_vec();
+    let forwarded_meta = rust_core::ForwardedControlPlaneMetadata {
+        request_metadata: expected_metadata.clone(),
+        extensions: expected_extensions.clone(),
+    };
+
+    // 1. Unary RPC propagation
+    let mut unary_req =
+        Request::new(TestMessage { field1: "unary_meta".to_string(), field2: "test".to_string() });
+    unary_req.extensions_mut().insert(forwarded_meta.clone());
+
+    let _ = rpc_handler
+        .isolate_rpc_call::<TestMessage, TestMessage>("test_method", unary_req)
+        .await
+        .expect("Unary call with forwarded metadata should succeed");
+
+    let received_unary = harness
+        .mock_enforcer_server
+        .last_received_request()
+        .await
+        .expect("Mock server should have captured unary request");
+    let unary_cp_meta = received_unary
+        .control_plane_metadata
+        .expect("ControlPlaneMetadata should be present on unary request");
+    assert_eq!(unary_cp_meta.request_metadata, expected_metadata);
+    assert_eq!(unary_cp_meta.extensions, expected_extensions);
+
+    // 2. Streaming RPC propagation
+    let stream_msg = TestMessage { field1: "stream_meta".to_string(), field2: "test".to_string() };
+    let mut stream_req = Request::new(tokio_stream::iter(vec![stream_msg]));
+    stream_req.extensions_mut().insert(forwarded_meta);
+
+    let mut response_stream = rpc_handler
+        .stream_isolate_rpc_call::<TestMessage, TestMessage>("test_method", stream_req)
+        .await
+        .expect("Streaming call with forwarded metadata should succeed")
+        .into_inner();
+    while let Some(resp) = response_stream.next().await {
+        resp.expect("Stream response should succeed");
+    }
+
+    let received_stream = harness
+        .mock_enforcer_server
+        .last_received_request()
+        .await
+        .expect("Mock server should have captured stream request");
+    let stream_cp_meta = received_stream
+        .control_plane_metadata
+        .expect("ControlPlaneMetadata should be present on stream request");
+    assert_eq!(stream_cp_meta.request_metadata, expected_metadata);
+    assert_eq!(stream_cp_meta.extensions, expected_extensions);
+
+    harness.stop().await.expect("Test harness should stop");
+}
+
+struct ChainingIsolateRpcService {
+    rpc_handler: RpcHandler,
+    barrier: Option<Arc<tokio::sync::Barrier>>,
+}
+
+#[tonic::async_trait]
+impl rust_core::IsolateRpcService for ChainingIsolateRpcService {
+    async fn unary_rpc_handler(
+        &self,
+        method_name: &str,
+        request_bytes: &[u8],
+        shm_pool: Option<&rust_core::EzShmSlabPool>,
+    ) -> Result<enforcer_proto::enforcer::v1::InvokeIsolateResponse, tonic::Status> {
+        if let Some(barrier) = &self.barrier {
+            barrier.wait().await;
+        }
+        let response_bytes = match method_name {
+            "chain_typed" => {
+                let req_msg = TestMessage::decode(request_bytes)
+                    .map_err(|e| tonic::Status::invalid_argument(e.to_string()))?;
+                // Construct a fresh Request::new(req_msg) without manual extension insertion;
+                // RpcHandler should fall back to task-local CURRENT_FORWARDED_METADATA.
+                let resp_msg = self
+                    .rpc_handler
+                    .isolate_rpc_call::<TestMessage, TestMessage>(
+                        "downstream_typed",
+                        Request::new(req_msg),
+                    )
+                    .await?;
+                resp_msg.encode_to_vec()
+            }
+            "chain_vec" => {
+                self.rpc_handler
+                    .isolate_rpc_call_vec("downstream_vec", Request::new(request_bytes.to_vec()))
+                    .await?
+            }
+            _ => return Err(tonic::Status::unimplemented("Unsupported method")),
+        };
+        Ok(rust_core::payload_bytes_to_invoke_isolate_response(
+            response_bytes,
+            DataScopeType::UserPrivate,
+            shm_pool,
+        )
+        .await)
+    }
+
+    async fn streaming_rpc_handler(
+        &self,
+        _method_name: &str,
+        _request_stream: Request<rust_core::PeekableInvokeIsolateRequestStream>,
+        _shm_pool: Option<rust_core::EzShmSlabPool>,
+    ) -> Result<tonic::Response<rust_core::PinBoxInvokeIsolateResponseStream>, tonic::Status> {
+        Err(tonic::Status::unimplemented("Streaming not used in this test"))
+    }
+
+    fn service_name(&self) -> &str {
+        "chaining_service"
+    }
+}
+
+#[tokio::test]
+async fn test_end_to_end_chaining_propagates_task_local_metadata() {
+    use enforcer_proto::enforcer::v1::ez_isolate_bridge_server::EzIsolateBridge;
+    use enforcer_proto::enforcer::v1::InvokeIsolateRequest;
+
+    let harness = TestHarness::start().await.expect("Test harness should start");
+
+    let rpc_handler = RpcHandler::new(
+        harness.client.clone(),
+        "downstream_domain".to_string(),
+        "downstream_service".to_string(),
+        DataScopeType::UserPrivate,
+    );
+    let chaining_service = Arc::new(ChainingIsolateRpcService { rpc_handler, barrier: None });
+    let dispatcher = rust_core::RpcDispatcher::new(chaining_service);
+
+    let mut expected_metadata = std::collections::HashMap::new();
+    expected_metadata.insert("X-Geo-Location".to_string(), b"DE".to_vec());
+    let expected_extensions = b"chained_http_header_context".to_vec();
+
+    // 1. Chained typed isolate_rpc_call via Request::new(out_msg) without manual extensions
+    let payload_bytes =
+        TestMessage { field1: "chained_typed".to_string(), field2: "ok".to_string() }
+            .encode_to_vec();
+    let incoming_typed = InvokeIsolateRequest {
+        control_plane_metadata: Some(ControlPlaneMetadata {
+            destination_operator_domain: "upstream_domain".to_string(),
+            destination_service_name: "chaining_service".to_string(),
+            destination_method_name: "chain_typed".to_string(),
+            ipc_message_id: 42,
+            request_metadata: expected_metadata.clone(),
+            extensions: expected_extensions.clone(),
+            ..Default::default()
+        }),
+        isolate_input: Some(EzHybridPayload {
+            delivery_method: Some(DeliveryMethod::InlineData(EzPayloadData {
+                datagrams: vec![payload_bytes],
+            })),
+        }),
+        ..Default::default()
+    };
+
+    dispatcher
+        .invoke_isolate(Request::new(incoming_typed))
+        .await
+        .expect("Chained typed RPC should succeed");
+
+    let captured_typed = harness
+        .mock_enforcer_server
+        .last_received_request()
+        .await
+        .expect("Mock enforcer bridge should have captured downstream typed request");
+    let typed_cp_meta = captured_typed
+        .control_plane_metadata
+        .expect("ControlPlaneMetadata should be present on downstream typed request");
+    assert_eq!(typed_cp_meta.request_metadata, expected_metadata);
+    assert_eq!(typed_cp_meta.extensions, expected_extensions);
+
+    // 2. Chained isolate_rpc_call_vec via Request::new(out_bytes) without manual extensions
+    let incoming_vec = InvokeIsolateRequest {
+        control_plane_metadata: Some(ControlPlaneMetadata {
+            destination_operator_domain: "upstream_domain".to_string(),
+            destination_service_name: "chaining_service".to_string(),
+            destination_method_name: "chain_vec".to_string(),
+            ipc_message_id: 43,
+            request_metadata: expected_metadata.clone(),
+            extensions: expected_extensions.clone(),
+            ..Default::default()
+        }),
+        isolate_input: Some(EzHybridPayload {
+            delivery_method: Some(DeliveryMethod::InlineData(EzPayloadData {
+                datagrams: vec![b"raw_vec_payload".to_vec()],
+            })),
+        }),
+        ..Default::default()
+    };
+
+    dispatcher
+        .invoke_isolate(Request::new(incoming_vec))
+        .await
+        .expect("Chained vec RPC should succeed");
+
+    let captured_vec = harness
+        .mock_enforcer_server
+        .last_received_request()
+        .await
+        .expect("Mock enforcer bridge should have captured downstream vec request");
+    let vec_cp_meta = captured_vec
+        .control_plane_metadata
+        .expect("ControlPlaneMetadata should be present on downstream vec request");
+    assert_eq!(vec_cp_meta.request_metadata, expected_metadata);
+    assert_eq!(vec_cp_meta.extensions, expected_extensions);
+
+    harness.stop().await.expect("Test harness should stop");
+}
+
+#[tokio::test]
+async fn test_concurrent_interleaved_unary_rpcs_preserve_distinct_extensions() {
+    use enforcer_proto::enforcer::v1::ez_isolate_bridge_server::EzIsolateBridge;
+    use enforcer_proto::enforcer::v1::InvokeIsolateRequest;
+
+    let harness = TestHarness::start().await.expect("Test harness should start");
+
+    let rpc_handler = RpcHandler::new(
+        harness.client.clone(),
+        "downstream_domain".to_string(),
+        "downstream_service".to_string(),
+        DataScopeType::UserPrivate,
+    );
+
+    let num_tasks = 8usize;
+    let barrier = Arc::new(tokio::sync::Barrier::new(num_tasks));
+    let chaining_service = Arc::new(ChainingIsolateRpcService {
+        rpc_handler: rpc_handler.clone(),
+        barrier: Some(barrier),
+    });
+    let dispatcher = Arc::new(rust_core::RpcDispatcher::new(chaining_service));
+
+    // Spawn concurrent, interleaved unary RPCs through RpcDispatcher -> ChainingIsolateRpcService -> RpcHandler.
+    // All tasks synchronize at the barrier inside unary_rpc_handler while their distinct
+    // task-local CURRENT_FORWARDED_METADATA scopes are active across .await points.
+    let mut handles = Vec::with_capacity(num_tasks);
+    for i in 0..num_tasks {
+        let dispatcher = dispatcher.clone();
+        handles.push(tokio::spawn(async move {
+            let mut req_meta = std::collections::HashMap::new();
+            req_meta.insert("X-Task-Id".to_string(), format!("meta_{i}").into_bytes());
+            let ext = format!("ext_{i}").into_bytes();
+            let payload =
+                TestMessage { field1: format!("task_{i}"), field2: "concurrent".to_string() }
+                    .encode_to_vec();
+
+            let incoming = InvokeIsolateRequest {
+                control_plane_metadata: Some(ControlPlaneMetadata {
+                    destination_operator_domain: "upstream_domain".to_string(),
+                    destination_service_name: "chaining_service".to_string(),
+                    destination_method_name: "chain_typed".to_string(),
+                    ipc_message_id: (1000 + i) as u64,
+                    request_metadata: req_meta,
+                    extensions: ext,
+                    ..Default::default()
+                }),
+                isolate_input: Some(EzHybridPayload {
+                    delivery_method: Some(DeliveryMethod::InlineData(EzPayloadData {
+                        datagrams: vec![payload],
+                    })),
+                }),
+                ..Default::default()
+            };
+
+            dispatcher
+                .invoke_isolate(Request::new(incoming))
+                .await
+                .expect("Concurrent chained unary RPC should succeed");
+        }));
+    }
+
+    for handle in handles {
+        handle.await.expect("Task should complete without panicking");
+    }
+
+    let captured_requests = harness.mock_enforcer_server.received_requests().await;
+    assert_eq!(captured_requests.len(), num_tasks);
+
+    let mut seen_tasks = std::collections::HashSet::new();
+    for req in captured_requests {
+        let cp_meta = req
+            .control_plane_metadata
+            .expect("ControlPlaneMetadata should be present on captured request");
+        let Some(DeliveryMethod::InlineData(data)) =
+            req.isolate_request_payload.and_then(|p| p.delivery_method)
+        else {
+            panic!("Expected InlineData payload");
+        };
+        let decoded = TestMessage::decode(data.datagrams[0].as_slice())
+            .expect("Payload should decode as TestMessage");
+        let task_idx: usize = decoded
+            .field1
+            .strip_prefix("task_")
+            .expect("field1 should start with task_")
+            .parse()
+            .expect("task index should parse");
+
+        let mut expected_meta = std::collections::HashMap::new();
+        expected_meta.insert("X-Task-Id".to_string(), format!("meta_{task_idx}").into_bytes());
+        let expected_ext = format!("ext_{task_idx}").into_bytes();
+
+        assert_eq!(cp_meta.request_metadata, expected_meta);
+        assert_eq!(cp_meta.extensions, expected_ext);
+        assert!(seen_tasks.insert(task_idx), "Duplicate task index {task_idx}");
+    }
+    assert_eq!(seen_tasks.len(), num_tasks);
+
+    harness.stop().await.expect("Test harness should stop");
+}
+
 impl Drop for TestHarness {
     fn drop(&mut self) {
         let path = Path::new(CLIENT_UDS_PATH.as_str());

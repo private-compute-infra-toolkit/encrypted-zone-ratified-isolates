@@ -155,4 +155,5 @@ repos:
     rev: v2.4.1
     hooks:
       - id: codespell
-        exclude: (MODULE\.bazel\.lock|.*\.pem)$
+        # PES testdata embeds base64 blobs that trip the spell checker.
+        exclude: (MODULE\.bazel\.lock|.*\.pem|pes/testdata/.*\.json)$

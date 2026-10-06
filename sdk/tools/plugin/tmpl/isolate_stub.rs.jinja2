@@ -128,7 +128,7 @@ impl {{ service_name }}IsolateStub {
     ) -> Result<Response<{{ resp_type }}>, Status> {
         let response_proto = self.rpc_handler.isolate_rpc_call::<{{ req_type }}, {{ resp_type }}>(
                 "{{ rpc_name }}",
-                request.into_inner(),
+                request,
             )
             .await?;
         Ok(Response::new(response_proto))

@@ -146,7 +146,13 @@ impl<T: {{service_name}}> IsolateRpcService for {{service_name}}IsolateRpcServic
                     Status::invalid_argument(format!("Unable to parse {{req_type}}: {}", e))
                 })?;
 
-                let response = self.service_impl.{{rpc.name | snakecase}}(Request::new(request)).await?.into_inner();
+                let mut tonic_request = Request::new(request);
+                if let Some(forwarded_metadata) =
+                    rust_core::current_forwarded_control_plane_metadata()
+                {
+                    tonic_request.extensions_mut().insert(forwarded_metadata);
+                }
+                let response = self.service_impl.{{rpc.name | snakecase}}(tonic_request).await?.into_inner();
                 Ok(message_to_invoke_isolate_response(response, self.response_scope, shm_pool).await)
             }
             {%- endif %}
@@ -170,13 +176,11 @@ impl<T: {{service_name}}> IsolateRpcService for {{service_name}}IsolateRpcServic
             {%- if rpc.client_streaming and rpc.server_streaming %}
             {%- set req_type = rpc.input_type.split('.')[-1] %}
             "{{rpc.name}}" => {
-                let mapped_stream = invoke_isolate_stream_to_message_stream::<{{req_type}}>(request_stream, shm_pool.clone());
-                match self.service_impl.{{rpc.name | snakecase}}(Request::new(mapped_stream)).await {
-                    Ok(response) => {
-                        Ok(Response::new(message_stream_to_invoke_isolate_stream(Box::pin(response.into_inner()), self.response_scope)))
-                    },
-                    Err(e) => Err(e)
-                }
+                let (metadata, extensions, inner_stream) = request_stream.into_parts();
+                let mapped_stream = invoke_isolate_stream_to_message_stream::<{{req_type}}>(Request::new(inner_stream), shm_pool.clone());
+                let service_request = Request::from_parts(metadata, extensions, mapped_stream);
+                let response = self.service_impl.{{rpc.name | snakecase}}(service_request).await?;
+                Ok(Response::new(message_stream_to_invoke_isolate_stream(Box::pin(response.into_inner()), self.response_scope)))
             }
             {%- endif %}
             {%- endfor %}

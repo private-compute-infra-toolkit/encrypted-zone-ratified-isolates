@@ -13,7 +13,10 @@
 // limitations under the License.
 
 use crate::shm_slab_pool::EzShmSlabPool;
-use crate::{PeekableInvokeIsolateRequestStream, PinBoxInvokeIsolateResponseStream};
+use crate::{
+    ForwardedControlPlaneMetadata, PeekableInvokeIsolateRequestStream,
+    PinBoxInvokeIsolateResponseStream,
+};
 use async_stream::stream;
 use derivative::Derivative;
 use enforcer_proto::enforcer::v1::ez_isolate_bridge_server::EzIsolateBridge;
@@ -31,6 +34,15 @@ use tokio_stream::StreamExt;
 use tonic::{Request, Response, Status, Streaming};
 use tracing::Instrument;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
+
+tokio::task_local! {
+    static CURRENT_FORWARDED_METADATA: Option<ForwardedControlPlaneMetadata>;
+}
+
+/// Returns the [`ForwardedControlPlaneMetadata`] for the current unary RPC task, if any.
+pub fn current_forwarded_control_plane_metadata() -> Option<ForwardedControlPlaneMetadata> {
+    CURRENT_FORWARDED_METADATA.try_with(|m| m.clone()).ok().flatten()
+}
 
 /// A trait for services that run within the isolate and handle RPC calls.
 ///
@@ -223,8 +235,22 @@ impl EzIsolateBridge for RpcDispatcher {
         });
         let _ = dispatch_span.set_parent(parent_context);
 
-        let mut response = service
-            .unary_rpc_handler(method_name, &request_bytes, self.ez_shm_slab_pool.as_ref())
+        let forwarded_metadata = (!metadata.request_metadata.is_empty()
+            || !metadata.extensions.is_empty())
+        .then(|| ForwardedControlPlaneMetadata {
+            request_metadata: metadata.request_metadata.clone(),
+            extensions: metadata.extensions.clone(),
+        });
+
+        let mut response = CURRENT_FORWARDED_METADATA
+            .scope(
+                forwarded_metadata,
+                service.unary_rpc_handler(
+                    method_name,
+                    &request_bytes,
+                    self.ez_shm_slab_pool.as_ref(),
+                ),
+            )
             .instrument(dispatch_span)
             .await?;
         let metadata = response.control_plane_metadata.get_or_insert_with(Default::default);
@@ -284,10 +310,18 @@ impl EzIsolateBridge for RpcDispatcher {
           });
           let _ = dispatch_span.set_parent(parent_context);
 
+          let mut service_request = Request::new(peekable_stream);
+          if !metadata.request_metadata.is_empty() || !metadata.extensions.is_empty() {
+              service_request.extensions_mut().insert(ForwardedControlPlaneMetadata {
+                  request_metadata: metadata.request_metadata.clone(),
+                  extensions: metadata.extensions.clone(),
+              });
+          }
+
           let response_stream = service
                 .streaming_rpc_handler(
                     method_name,
-                    Request::new(peekable_stream),
+                    service_request,
                     this.ez_shm_slab_pool.clone(),
                 )
                 .instrument(dispatch_span)

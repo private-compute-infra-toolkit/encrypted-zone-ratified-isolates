@@ -147,6 +147,8 @@ pub struct MockIsolateRpcService {
     stream_call_count: Arc<AtomicUsize>,
     #[derivative(Default(value = "Arc::new(AtomicUsize::new(0))"))]
     stream_message_count: Arc<AtomicUsize>,
+    #[derivative(Default(value = "Arc::new(Mutex::new(None))"))]
+    last_forwarded_metadata: Arc<Mutex<Option<rust_core::ForwardedControlPlaneMetadata>>>,
 }
 
 impl MockIsolateRpcService {
@@ -160,6 +162,12 @@ impl MockIsolateRpcService {
 
     pub fn stream_message_count(&self) -> usize {
         self.stream_message_count.load(Ordering::SeqCst)
+    }
+
+    pub async fn last_forwarded_metadata(
+        &self,
+    ) -> Option<rust_core::ForwardedControlPlaneMetadata> {
+        self.last_forwarded_metadata.lock().await.clone()
     }
 }
 
@@ -175,6 +183,8 @@ impl IsolateRpcService for MockIsolateRpcService {
             return Err(Status::invalid_argument("Invalid method name"));
         }
         self.unary_call_count.fetch_add(1, Ordering::SeqCst);
+        *self.last_forwarded_metadata.lock().await =
+            rust_core::current_forwarded_control_plane_metadata();
         let resp = rust_core::payload_bytes_to_invoke_isolate_response(
             request_bytes.to_vec(),
             DataScopeType::Unspecified,
@@ -194,6 +204,8 @@ impl IsolateRpcService for MockIsolateRpcService {
             return Err(Status::invalid_argument("Invalid method name"));
         }
         self.stream_call_count.fetch_add(1, Ordering::SeqCst);
+        *self.last_forwarded_metadata.lock().await =
+            request.extensions().get::<rust_core::ForwardedControlPlaneMetadata>().cloned();
 
         let stream_message_count = self.stream_message_count.clone();
         let shm_pool_clone = shm_pool.clone();
@@ -277,6 +289,8 @@ pub struct MockIsolateEzBridgeServer {
     last_known_state: Arc<Mutex<Option<i32>>>,
     #[derivative(Default(value = "Arc::new(Mutex::new(None))"))]
     last_received_request: Arc<Mutex<Option<InvokeEzRequest>>>,
+    #[derivative(Default(value = "Arc::new(Mutex::new(Vec::new()))"))]
+    received_requests: Arc<Mutex<Vec<InvokeEzRequest>>>,
     #[derivative(Default(value = "Arc::new(Mutex::new(false))"))]
     force_shm_response: Arc<Mutex<bool>>,
 }
@@ -302,6 +316,14 @@ impl MockIsolateEzBridgeServer {
         self.last_received_request.lock().await.clone()
     }
 
+    pub async fn received_requests(&self) -> Vec<InvokeEzRequest> {
+        self.received_requests.lock().await.clone()
+    }
+
+    pub async fn clear_received_requests(&self) {
+        self.received_requests.lock().await.clear();
+    }
+
     pub async fn set_force_shm_response(&self, force: bool) {
         *self.force_shm_response.lock().await = force;
     }
@@ -315,6 +337,7 @@ impl IsolateEzBridge for MockIsolateEzBridgeServer {
     ) -> Result<Response<InvokeEzResponse>, Status> {
         let req = request.into_inner();
         *self.last_received_request.lock().await = Some(req.clone());
+        self.received_requests.lock().await.push(req.clone());
         self.unary_call_count.fetch_add(1, Ordering::SeqCst);
 
         let force_shm = *self.force_shm_response.lock().await;
@@ -330,15 +353,21 @@ impl IsolateEzBridge for MockIsolateEzBridgeServer {
         self.stream_call_count.fetch_add(1, Ordering::SeqCst);
         let stream_message_count = self.stream_message_count.clone();
         let force_shm_response = self.force_shm_response.clone();
+        let last_received_request = self.last_received_request.clone();
+        let received_requests = self.received_requests.clone();
 
         let output_stream = request.into_inner().then(move |req| {
             let stream_message_count = stream_message_count.clone();
             let force_shm_response = force_shm_response.clone();
+            let last_received_request = last_received_request.clone();
+            let received_requests = received_requests.clone();
             async move {
                 stream_message_count.fetch_add(1, Ordering::SeqCst);
                 let Ok(req) = req else {
                     return Err(Status::invalid_argument("Request should be Ok"));
                 };
+                *last_received_request.lock().await = Some(req.clone());
+                received_requests.lock().await.push(req.clone());
 
                 let force_shm = *force_shm_response.lock().await;
                 validate_and_process_invoke_ez(req, "stream_mock_", force_shm).await

@@ -24,9 +24,18 @@ use payload_proto::enforcer::v1::{
     ez_hybrid_payload::DeliveryMethod, EzHybridPayload, EzPayloadData, ShmSlotData,
 };
 use prost::Message;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio_stream::StreamExt;
-use tonic::{Request, Response, Status};
+use tonic::{IntoRequest, Request, Response, Status};
+
+/// Control-plane metadata fields (`request_metadata` and `extensions`) retained from an
+/// incoming [`ControlPlaneMetadata`] and propagated to downstream outgoing requests.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct ForwardedControlPlaneMetadata {
+    pub request_metadata: HashMap<String, Vec<u8>>,
+    pub extensions: Vec<u8>,
+}
 
 /// Handles RPC calls to the isolate by wrapping the `IsolateEzBridgeSdkClient`.
 ///
@@ -73,7 +82,8 @@ impl RpcHandler {
         ipc_message_id: u64,
         method_name: String,
         request_bytes: Vec<u8>,
-        metadata_headers: std::collections::HashMap<String, String>,
+        metadata_headers: HashMap<String, String>,
+        forwarded_metadata: Option<&ForwardedControlPlaneMetadata>,
     ) -> InvokeEzRequest {
         let mut delivery_method = None;
         if let Some(shm_pool) = &self.shm_pool {
@@ -88,6 +98,10 @@ impl RpcHandler {
             delivery_method =
                 Some(DeliveryMethod::InlineData(EzPayloadData { datagrams: vec![request_bytes] }));
         };
+        let (request_metadata, extensions) = match forwarded_metadata {
+            Some(meta) => (meta.request_metadata.clone(), meta.extensions.clone()),
+            None => (Default::default(), Default::default()),
+        };
         InvokeEzRequest {
             control_plane_metadata: Some(ControlPlaneMetadata {
                 ipc_message_id,
@@ -96,6 +110,8 @@ impl RpcHandler {
                 destination_service_name: self.service_name.clone(),
                 destination_method_name: method_name,
                 metadata_headers,
+                request_metadata,
+                extensions,
                 ..Default::default()
             }),
             isolate_request_iscope: Some(EzPayloadIsolateScope {
@@ -118,7 +134,7 @@ impl RpcHandler {
     /// # Arguments
     ///
     /// * `method_name` - The name of the RPC method to invoke.
-    /// * `request` - The request message.
+    /// * `request` - The request message or `tonic::Request<T>`.
     ///
     /// # Generic Parameters
     ///
@@ -131,10 +147,18 @@ impl RpcHandler {
     pub async fn isolate_rpc_call<T: Message, U: Message + Default>(
         &self,
         method_name: &str,
-        request: T,
+        request: impl IntoRequest<T>,
     ) -> Result<U, Status> {
-        let request_bytes = request.encode_to_vec();
-        let response = self.isolate_rpc_call_helper(method_name, request_bytes).await?;
+        let request = request.into_request();
+        let forwarded_metadata = request
+            .extensions()
+            .get::<ForwardedControlPlaneMetadata>()
+            .cloned()
+            .or_else(crate::current_forwarded_control_plane_metadata);
+        let request_bytes = request.into_inner().encode_to_vec();
+        let response = self
+            .isolate_rpc_call_helper(method_name, request_bytes, forwarded_metadata.as_ref())
+            .await?;
         decode_invoke_ez_response(self.shm_pool.as_ref(), &response)
     }
 
@@ -147,15 +171,23 @@ impl RpcHandler {
     /// # Arguments
     ///
     /// * `method_name` - The name of the RPC method to invoke.
-    /// * `request` - The request message as a vector payload.
+    /// * `request` - The request message as a vector payload or `tonic::Request<Vec<u8>>`.
     ///
     /// Returns a `Result` containing the vector response message or a `tonic::Status` error.
     pub async fn isolate_rpc_call_vec(
         &self,
         method_name: &str,
-        request: Vec<u8>,
+        request: impl IntoRequest<Vec<u8>>,
     ) -> Result<Vec<u8>, Status> {
-        let response = self.isolate_rpc_call_helper(method_name, request).await?;
+        let request = request.into_request();
+        let forwarded_metadata = request
+            .extensions()
+            .get::<ForwardedControlPlaneMetadata>()
+            .cloned()
+            .or_else(crate::current_forwarded_control_plane_metadata);
+        let response = self
+            .isolate_rpc_call_helper(method_name, request.into_inner(), forwarded_metadata.as_ref())
+            .await?;
         extract_invoke_ez_response(self.shm_pool.as_ref(), &response)
     }
 
@@ -164,6 +196,7 @@ impl RpcHandler {
         &self,
         method_name: &str,
         request_bytes: Vec<u8>,
+        forwarded_metadata: Option<&ForwardedControlPlaneMetadata>,
     ) -> Result<InvokeEzResponse, Status> {
         let ipc_message_id = rand::random::<u64>();
         let metadata_headers = crate::telemetry::traces::get_trace_context();
@@ -174,6 +207,7 @@ impl RpcHandler {
                 method_name.to_string(),
                 request_bytes,
                 metadata_headers,
+                forwarded_metadata,
             )
             .await;
 
@@ -253,17 +287,25 @@ impl RpcHandler {
         let method_name = method_name.to_string();
         let ipc_message_id = rand::random::<u64>();
         let metadata_headers = crate::telemetry::traces::get_trace_context();
+        let forwarded_metadata = request_stream
+            .extensions()
+            .get::<ForwardedControlPlaneMetadata>()
+            .cloned()
+            .or_else(crate::current_forwarded_control_plane_metadata)
+            .map(Arc::new);
 
         let invoke_ez_stream = request_stream.into_inner().then(move |request_bytes| {
             let this = this.clone();
             let method_name = method_name.clone();
             let metadata_headers = metadata_headers.clone();
+            let forwarded_metadata = forwarded_metadata.clone();
             async move {
                 this.create_invoke_ez_request(
                     ipc_message_id,
                     method_name,
                     request_bytes,
                     metadata_headers,
+                    forwarded_metadata.as_deref(),
                 )
                 .await
             }

@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## 0.19.0 (2026-10-15)
+
+
+### Anonymous Token Service
+
+* **ats:** address review comments from cl/116980
+* **ats:** preserve TLS session payloads via raw-byte passthrough
+* **ats:** support TLS session token extraction and forwarding
+
+
+### Noise Session Manager
+
+* **noise:** address review comments on cl/116979
+
+
+### TLS Session Manager
+
+* **tsm:** forward ControlPlaneMetadata to backend session
+
 ## 0.18.0 (2026-10-06)
 
 

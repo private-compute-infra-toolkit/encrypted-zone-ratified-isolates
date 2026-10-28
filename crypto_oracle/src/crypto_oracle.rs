@@ -63,7 +63,7 @@ impl CryptoOracle {
             // Note: JoinMap insert overrides previous values
             // For now, explicitly don't support overriding, as it's only
             // called from Gen currently, and can't be called on existing keys
-            // TODO: Support refresh schedule override API call
+            // TODO(b/434244913): Support refresh schedule override API call
             return Err("Key already has scheduled refreshes".to_string());
         };
 
@@ -158,7 +158,7 @@ type VerifyResponseResult = Result<Response<VerifyResponse>, tonic::Status>;
 #[tonic::async_trait]
 impl OracleApi for CryptoOracle {
     /// Generate a symmetric key or asymmetric key pair
-    /// TODO: Implement Symmetric keygen
+    /// TODO(b/434244913): Implement Symmetric keygen
     /// Currently only does ecdsa_p256 asymmetric keys
     /// Returns nonzero status if can't parse, key already exists
     #[tracing::instrument(name = "CryptoOracle.generate_key", skip_all)]
@@ -287,7 +287,7 @@ impl OracleApi for CryptoOracle {
     }
 
     // Sign a message with the requested private key
-    // TODO: Implement Symmetric key signing
+    // TODO(b/434244913): Implement Symmetric key signing
     // If no key scope, uses message scope. Otherwise uses the more restrictive
     // Does not allow for scope relaxation (key scope weaker than message scope)
     // Currently assumes that the requested message payload has only one message

@@ -46,7 +46,7 @@ repos:
       - id: require-ascii
       - id: shellcheck
 
-      # TODO: Fix to respect excluded files
+      # TODO(b/465536506): Fix to respect excluded files
       # Currently it is following bazel symlinks and modifying cached files
   # - repo: https://github.com/bufbuild/buf
   #   rev: v1.60.0
@@ -68,6 +68,12 @@ repos:
         name: Check gitlinks
         language: script
         entry: devkit/gitlinks --check
+        always_run: true
+        pass_filenames: false
+      - id: dirmd
+        name: Validate DIR_METADATA and agentic_review
+        language: script
+        entry: tools/validate_dirmd.sh
         always_run: true
         pass_filenames: false
       - id: addlicense

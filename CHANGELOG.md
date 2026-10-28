@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## 0.20.0 (2026-10-28)
+
+
+### Features
+
+* allow Google Wallet features
+
+
+### Bug Fixes
+
+* **pubsub_borker:** strip message and details from validation report
+
+
+### Documentation
+
+* add agent coding and review guidelines in AGENTS.md
+
 ## 0.19.0 (2026-10-15)
 
 

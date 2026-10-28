@@ -63,7 +63,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let oracle = Arc::new(CryptoOracle::new());
 
     log::info!("Starting Crypto Oracle Ratified Isolate Server");
-    // TODO: Per-request scope once supported
+    // TODO(b/484030934): Per-request scope once supported
     let server = create_isolate_server_with_resp_scope! {
         OracleApiIsolateRpcService => oracle => DataScopeType::Public,
     };

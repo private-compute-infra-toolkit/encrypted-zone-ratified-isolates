@@ -51,7 +51,7 @@ pub struct StoredKey {
     pub manager: DebugIgnore<Manager>,
     /// Optional, Output scope of applying key.
     /// If not provided, defaults to input's scope
-    /// TODO: Determine if this should be EzDataScope or DataScopeType
+    /// TODO(http://b/433392780): Determine if this should be EzDataScope or DataScopeType
     pub output_scope: Option<EzDataScope>,
     /// If requested, the maximum number of consecutive failed refreshes allowed
     /// before a key is stale

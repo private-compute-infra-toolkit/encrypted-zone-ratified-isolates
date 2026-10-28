@@ -127,5 +127,5 @@ impl IsolateEzBridgeSdkClient {
         Ok(())
     }
 
-    // TODO: Add shared memory management.
+    // TODO(b/473649647): Add shared memory management.
 }

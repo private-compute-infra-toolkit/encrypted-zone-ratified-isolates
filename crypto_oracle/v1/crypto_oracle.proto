@@ -16,7 +16,7 @@ syntax = "proto3";
 
 package crypto_oracle.v1;
 
-// TODO: Move this to a common location (like ratified isolate)
+// TODO(b/421253802): Move this to a common location (like ratified isolate)
 
 import "enforcer/v1/ez_data_scope.proto";
 import "enforcer/v1/ez_payload.proto";

@@ -1,0 +1,138 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
+load(":isolate_package.bzl", "isolate_package")
+
+exports_files([
+    ".rustfmt.toml",
+    "buf.yaml",
+])
+
+rust_library(
+    name = "tls_session_manager",
+    srcs = [
+        "src/ez_invoker.rs",
+        "src/tls_session_manager.rs",
+    ],
+    deps = [
+        "//v1:plaintext_service_sdk",
+        "//v1:tls_session_manager_rust",
+        "//v1:tls_session_manager_service",
+        "@crates//:log",
+        "@crates//:tokio",
+        "@crates//:tokio-retry",
+        "@crates//:tokio-stream",
+        "@crates//:tonic",
+        "@oak//oak_session/tls/rust:oak_session_tls",
+        "@oak_crates_index//:anyhow",
+        "@oak_crates_index//:pem",
+        "@oak_crates_index//:rcgen",
+        "@oak_crates_index//:rustls-pemfile",
+        "@oak_crates_index//:rustls-pki-types",
+        "@privacy-sandbox-ez-sdk//enforcer/v1:enforcer_rust",
+        "@setup-isolate//v1:setup_isolate_rust",
+        "@setup-isolate//v1:setup_service",
+    ],
+)
+
+rust_test(
+    name = "tls_session_manager_test",
+    size = "small",
+    srcs = ["test/tls_session_manager_test.rs"],
+    data = [
+        "@oak//oak_session/tls/testing:test_keys",
+    ],
+    deps = [
+        ":tls_session_manager",
+        "//v1:fake_test_service_rust",
+        "//v1:fake_test_service_sdk",
+        "//v1:plaintext_service_sdk",
+        "//v1:tls_session_manager_rust",
+        "//v1:tls_session_manager_service",
+        "@crates//:prost",
+        "@crates//:tokio",
+        "@crates//:tokio-stream",
+        "@crates//:tonic",
+        "@oak//oak_session/tls/rust:oak_session_tls",
+        "@oak_crates_index//:anyhow",
+        "@oak_crates_index//:pem",
+        "@oak_crates_index//:rcgen",
+        "@oak_crates_index//:rustls",
+        "@oak_crates_index//:rustls-pemfile",
+        "@oak_crates_index//:rustls-pki-types",
+        "@privacy-sandbox-ez-sdk//enforcer/v1:enforcer_rust",
+        "@setup-isolate//v1:setup_isolate_rust",
+    ],
+)
+
+rust_binary(
+    name = "tls_session_manager_isolate",
+    srcs = ["main.rs"],
+    deps = [
+        ":tls_session_manager",
+        "//v1:tls_session_manager_service",
+        "@crates//:env_logger",
+        "@crates//:log",
+        "@crates//:tokio",
+        "@tsm_crates//:clap",
+    ],
+)
+
+isolate_package(
+    base_name = "tls_session_manager",
+    binary = ":tls_session_manager_isolate",
+)
+
+rust_test(
+    name = "tls_session_manager_integration_test",
+    size = "small",
+    srcs = ["test/tsm_integration_test.rs"],
+    args = ["--test-threads=1"],
+    data = [
+        ":tls_session_manager_isolate",
+        "@oak//oak_session/tls/testing:test_keys",
+    ],
+    env = {
+        "CLIENT_UDS_PATH": "/dev/shm/ez_tsm_integration_test/test_client.uds",
+        "READY_FIFO_PATH": "/dev/shm/ez_tsm_integration_test/test_ready.fifo",
+        "SERVER_UDS_PATH": "/dev/shm/ez_tsm_integration_test/test_server.uds",
+    },
+    deps = [
+        ":tls_session_manager",
+        "//v1:plaintext_service_sdk",
+        "//v1:tls_session_manager_rust",
+        "//v1:tls_session_manager_service",
+        "@crates//:hyper-util",
+        "@crates//:log",
+        "@crates//:nix",
+        "@crates//:once_cell",
+        "@crates//:prost",
+        "@crates//:rand",
+        "@crates//:tokio",
+        "@crates//:tokio-stream",
+        "@crates//:tonic",
+        "@crates//:tower",
+        "@oak//oak_session/tls/rust:oak_session_tls",
+        "@oak_crates_index//:anyhow",
+        "@oak_crates_index//:rcgen",
+        "@oak_crates_index//:rustls-pemfile",
+        "@oak_crates_index//:rustls-pki-types",
+        "@privacy-sandbox-ez-sdk//enforcer/v1:data_scope_rust",
+        "@privacy-sandbox-ez-sdk//enforcer/v1:enforcer_rust",
+        "@privacy-sandbox-ez-sdk//enforcer/v1:payload_rust",
+        "@rules_rust//tools/runfiles",
+        "@setup-isolate//v1:setup_isolate_rust",
+    ],
+)

@@ -1,0 +1,82 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
+load("@privacy-sandbox-ez-sdk//tools/plugin:ez_sdk.bzl", "ez_isolate_service_rs")
+load("@rules_buf//buf:defs.bzl", "buf_lint_test")
+load("@rules_rust_prost//:defs.bzl", "rust_prost_library")
+
+proto_library(
+    name = "isolate_package_endorsement_proto",
+    srcs = ["isolate_package_endorsement.proto"],
+    import_prefix = "setup_isolate/",
+    visibility = ["//visibility:public"],
+)
+
+proto_library(
+    name = "setup_isolate_proto_only",
+    srcs = ["setup.proto"],
+    import_prefix = "setup_isolate/",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":isolate_package_endorsement_proto",
+        "@com_google_protobuf//:timestamp_proto",
+    ],
+)
+
+# Combined proto library to compile everything under setup_isolate_proto
+proto_library(
+    name = "setup_isolate_proto",
+    srcs = [
+        "isolate_package_endorsement.proto",
+        "setup.proto",
+    ],
+    import_prefix = "setup_isolate/",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_google_protobuf//:timestamp_proto",
+    ],
+)
+
+buf_lint_test(
+    name = "setup_lint",
+    size = "small",
+    config = "//:buf.yaml",
+    targets = [
+        ":setup_isolate_proto",
+    ],
+)
+
+rust_prost_library(
+    name = "timestamp_proto_rust",
+    proto = "@com_google_protobuf//:timestamp_proto",
+    visibility = ["//visibility:public"],
+)
+
+rust_prost_library(
+    name = "setup_isolate_rust",
+    proto = ":setup_isolate_proto",
+    visibility = ["//visibility:public"],
+)
+
+ez_isolate_service_rs(
+    name = "setup_service",
+    crate_name = "setup_isolate_sdk",
+    proto_basename = "setup",
+    protos = [":setup_isolate_proto"],
+    rust_protos = [
+        ":setup_isolate_rust",
+    ],
+    visibility = ["//visibility:public"],
+)

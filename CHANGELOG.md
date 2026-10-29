@@ -2,36 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
-## 0.20.0 (2026-10-28)
+## 0.20.1 (2026-10-29)
 
-
-### Features
-
-* allow Google Wallet features
-
-
-### Bug Fixes
-
-* **pubsub_borker:** strip message and details from validation report
-
-
-### Documentation
-
-* add agent coding and review guidelines in AGENTS.md
+_No user-facing changes to open-sourced Ratified Isolates in this release._
 
 ## 0.19.0 (2026-10-15)
-
-
-### Anonymous Token Service
-
-* **ats:** address review comments from cl/116980
-* **ats:** preserve TLS session payloads via raw-byte passthrough
-* **ats:** support TLS session token extraction and forwarding
-
-
-### Noise Session Manager
-
-* **noise:** address review comments on cl/116979
 
 
 ### TLS Session Manager
@@ -39,47 +14,6 @@ All notable changes to this project will be documented in this file. See [commit
 * **tsm:** forward ControlPlaneMetadata to backend session
 
 ## 0.18.0 (2026-10-06)
-
-
-### Approver
-
-* **approver:** add method allow-listing and audit mode to Approver
-
-
-### Anonymous Token Service
-
-* **ats:** address review comments from cl/116980
-* **ats:** forward request_metadata and extensions to Aratea isolate
-
-
-### Noise Session Manager
-
-* **noise:** forward request_metadata and extensions to server stream
-
-
-### Pubsub Broker
-
-* **pubsub_broker:** configure OTel traces and metrics
-* **pubsub_broker:** log a fingerprint, not the session token
-
-
-### Quota and UTA
-
-* **quota_uta:** accept the demand BAG sends
-* **quota_uta:** align UtaUserType enum values
-* **quota_uta:** allow the nonprod-default quota bucket
-* **quota_uta:** count allowlist rejections
-* **quota_uta:** encode proto2 required fields
-* **quota_uta:** initialize the SDK client on both RPC handlers
-* **quota_uta:** mirror the upstream BeyondConfig quota nesting
-* **quota_uta:** quantize beyond-gxus as micros
-* **quota_uta:** unwrap the watcher change envelope before decoding
-
-
-### SDK
-
-* **sdk:** address review comments from cl/116978
-* **sdk:** retain and propagate request_metadata and extensions
 
 
 ### Features
@@ -95,94 +29,11 @@ All notable changes to this project will be documented in this file. See [commit
 ## 0.17.0 (2026-09-17)
 
 
-### Quota and UTA
-
-* **quota_uta:** add BeyondConfig proto for CDPush
-* **quota_uta:** add TTL to MokaCache
-* **quota_uta:** allowlist real QuotaServer group IDs
-* **quota_uta:** allowlist the QuotaServer project ID
-* **quota_uta:** bind RPC context fields to admission state
-* **quota_uta:** bind the structured completion token to state
-* **quota_uta:** bind the UTA-issued admission ID to admission state
-* **quota_uta:** decode the canonical UTA event ID wire format
-* **quota_uta:** decompose composite QuotaServer user IDs
-* **quota_uta:** encapsulate and authenticate UTA admission state
-* **quota_uta:** encapsulate quota session state
-* **quota_uta:** fail closed when ReportCompletion carries no token
-* **quota_uta:** forward the validated QuotaServer project ID
-* **quota_uta:** implement allowlist with hardcoded values for UTA
-* **quota_uta:** implement DynamicAllowlist and PubSubConfigSubscriber
-* **quota_uta:** implement metric quantization for UTA
-* **quota_uta:** integrate dynamic configuration with handlers and CLI
-* **quota_uta:** parse BeyondConfig and build dynamic Allowlist
-* **quota_uta:** pass through UTA parent_event_id
-* **quota_uta:** sanitize and filter incoming UTA requests
-* **quota_uta:** scrub google3 paths from beyond_config.proto
-* **quota_uta:** validate and bind QoS criticality on both UTA RPCs
-* **quota_uta:** wire cache TTL CLI flag and tests
-
-
 ### TLS Session Manager
 
 * **tsm:** omit root CA certificate from frontend TLS chain
 
-
-### Features
-
-* **anonymous_token_spender:** add metrics module
-* **anonymous_token_spender:** instrument outbound RPCs with metrics
-* **cdpush:** implement CDPush chunking and handling
-* **nsm:** change externally_sign data scope from UserPrivate to Public
-
-
-### Documentation
-
-* **quota_uta:** detail privacy guarantees and security mitigations
-* **quota_uta:** document build and test instructions
-* **quota_uta:** document dynamic configuration protocol flow
-* **quota_uta:** refresh QuotaServer sanitization documentation
-* **quota_uta:** update architecture overview and system diagram
-
-## 0.16.0 (2026-08-27)
-
-
-### Approver
-
-* **approver:** propagate response extensions to enforcer
-
-
-### SDK
-
-* **sdk:** sync bridge protobuf definitions with enforcer
-
-
-### Features
-
-* **cdpush:** update pubsub_broker.proto for CDPush config chunking
-
 ## 0.15.0 (2026-08-24)
-
-
-### Approver
-
-* **approver:** add coverage configuration to bazelrc
-* **approver:** align LLVM toolchain with other isolates
-
-
-### Anonymous Token Service
-
-* **ats:** add coverage configuration to bazelrc
-* **ats:** align LLVM toolchain with other isolates
-
-
-### Dependencies
-
-* **deps:** add moka crate dependency to quota_uta
-
-
-### Noise Session Manager
-
-* **noise:** add coverage configuration to bazelrc
 
 
 ### Crypto Oracle
@@ -191,40 +42,9 @@ All notable changes to this project will be documented in this file. See [commit
 * **oracle:** align LLVM toolchain with other isolates
 
 
-### Pubsub Broker
-
-* **pubsub_broker:** add coverage configuration to bazelrc
-
-
-### Quota and UTA
-
-* **quota_uta:** Add allowlist validation
-* **quota_uta:** Add field sanitization
-* **quota_uta:** add missing proto fields and RPCs
-* **quota_uta:** Add quota_uta server initialization
-* **quota_uta:** allow configuring cache size via CLI in main.rs
-* **quota_uta:** convert uninspected fields to opaque bytes
-* **quota_uta:** implement Admit pass-through for UTA admission
-* **quota_uta:** implement PutTokens and ClientFlags pass-through
-* **quota_uta:** implement ReportCompletion pass-through for UTA
-* **quota_uta:** Strip agile serving and inline backend overrides
-
-
 ### Setup Isolate
 
 * **setup:** add coverage configuration to bazelrc
-
-
-### SDK
-
-* **sdk:** add coverage configuration to bazelrc
-* **sdk:** align LLVM toolchain with other isolates
-
-
-### Trusted Aratea Traffic
-
-* **tat:** add coverage configuration to bazelrc
-* **tat:** align LLVM toolchain with other isolates
 
 
 ### TLS Session Manager
@@ -232,146 +52,7 @@ All notable changes to this project will be documented in this file. See [commit
 * **tsm:** add coverage configuration to bazelrc
 * **tsm:** propagate inner stream errors to client
 
-
-### Features
-
-* add bounded consume-on-read Cache in quota_uta
-* add OpenTelemetry metrics for setup isolate
-* add state module and stamp packing helpers in quota_uta
-* enable line coverage checks across all ratified isolates
-* synchronize pending tasks on MokaCache len in quota_uta
-
-## 0.14.0 (2026-08-10)
-
-
-### Dependencies
-
-* **deps:** Update DevKit to release-3.11.0
-
-
-### Pubsub Broker
-
-* **pubsub_broker:** Add MODULE.bazel.lock for pubsub_broker
-* **pubsub_broker:** add OCI isolate packaging rules for pubsub_broker
-* **pubsub_broker:** downstream parameter updates
-* **pubsub_broker:** report validation path
-* **pubsub_broker:** session manager service
-
-
-### Quota and UTA
-
-* **quota_uta:** add allowed_project_ids to Allowlist
-* **quota_uta:** Add Allowlist struct and initialization in main
-* **quota_uta:** Add multi_get_tokens passthrough
-* **quota_uta:** Add parameters with operator domains
-* **quota_uta:** add validation methods and tests for Allowlist
-* **quota_uta:** align LLVM toolchain with other isolates
-* **quota_uta:** Cache and reuse QuotaServer stub with OnceLock
-* **quota_uta:** Clean protobuffs
-* **quota_uta:** define minimal proto for AdmissionControlService
-* **quota_uta:** define minimal quotas.proto for QuotaServer
-* **quota_uta:** implement ClientFlagsService pass-through
-* **quota_uta:** Make files symlinks like in other isolates
-* **quota_uta:** Move services to service.rs
-* **quota_uta:** pass-through stubs for QuotaServer and UtaAdmission
-* **quota_uta:** Remove everything, keep skeleton
-
-
-### Features
-
-* add binary target and main entry point for pubsub_broker
-* add CLI args and telemetry setup for setup isolate
-* implement validation report handler in report module
-* Initialize new integration_test directory
-* initialize PubSub Broker RI
-* Update PES prod root cert
-
-
-### Documentation
-
-* **quota_uta:** align proto tags with canonical main protos
-
-## 0.13.0 (2026-07-27)
-
-
-### Dependencies
-
-* **deps:** add pcit/api repository as submodule
-* **deps:** Upgrade Project Oak for RSA PES certificate support
-
-
-### Features
-
-* add ValidateIsolateEndorsement RPC to SetupService
-* implement PES endorsement verification API
-* implement ValidateIsolateEndorsement RPC in setup_service
-* **quota_uta:** add core rate limiter logic
-* **quota_uta:** Add missing bazel configuration files
-* **quota_uta:** add proto definitions and rules
-* **quota_uta:** add server entry point and macro
-* **quota_uta:** add service handlers
-* validate expected claims in PES confirmation
-
-
-### Bug Fixes
-
-* **nsm:** connection leaks on ungraceful disconnects or cancellations
-
-## 0.12.0 (2026-07-15)
-
-
-### Anonymous Token Service
-
-* **ats:** Propagate OTel context in token extraction
-
-
-### SDK
-
-* **sdk:** Propagate OTel trace context synchronously in stream calls
-
-
-### Traces
-
-* **traces:** trusted aratea traffic
-
 ## 0.11.0 (2026-07-08)
-
-
-### Approver
-
-* **approver:** Enable traces in Approver isolate
-
-
-### Anonymous Token Service
-
-* **ats:** Enable traces in ATS isolate
-
-
-### Dependencies
-
-* **deps:** Bump version of tokio-retry crate to 0.3.2
-* **deps:** move base image reference to SDK
-* **deps:** Update DevKit to release-3.10.0
-* **deps:** Update versions for consistency
-
-
-### SDK
-
-* **sdk:** configure metrics retries and make setup failures fatal
-* **sdk:** handle tracing setup errors and configure retries
-* **sdk:** Pass through testonly in macros
-* **sdk:** support raw byte stream RPCs
-
-
-### Traces
-
-* **traces:** Add /IsolateServer.dispatch_stream span
-* **traces:** Add dispatch_unary span
-* **traces:** Add start_noise_session_span
-* **traces:** Add traces propagation in approver
-* **traces:** Enable traces in nsm and crypto_oracle
-* **traces:** Propagate context InvokeEzRequest
-* **traces:** Propagate correct trace context from approver
 
 
 ### TLS Session Manager
@@ -387,8 +68,6 @@ All notable changes to this project will be documented in this file. See [commit
 
 ### Features
 
-* add allocation error logs to ShmSlabPool
-* **pubsub_broker:** Define PubSubBroker proto
 * **setup_isolate:** Add fields in ez_mtls
 * **setup_isolate:** Add isolate binary
 * **setup_isolate:** Add operator role
@@ -400,20 +79,8 @@ All notable changes to this project will be documented in this file. See [commit
 * **setup_isolate:** Remove unused mtls fields
 * **setup_isolate:** Rename isolate package
 * **setup_isolate:** Use correct AVS name
-* Test path cleanup improvements
-* Update PubSubBroker proto
 
 ## 0.10.0 (2026-06-16)
-
-
-### Dependencies
-
-* **deps:** Update DevKit to release-3.9.0
-
-
-### Noise Session Manager
-
-* **noise:** Add metrics about server stream closure
 
 
 ### TLS Session Manager
@@ -423,34 +90,11 @@ All notable changes to this project will be documented in this file. See [commit
 
 ### Features
 
-* **nsm:** Double check cached cert to avoid race
-* **nsm:** Refresh stale cached certs
 * **setup_isolate:** add Setup Isolate proto definition
 * **setup_isolate:** add SetupService
 * **setup_isolate:** configure basic Bazel workspace
-* upgrade rust to latest stable in all RIs (1.96.0)
-
-
-### Bug Fixes
-
-* gRPC error propagation and connection leak in NoiseSessionManager
-* missing ELF due to extractor absolute symlink changes
-* **nsm:** Cap max cert staleness to validity
 
 ## 0.9.0 (2026-06-02)
-
-
-### Dependencies
-
-* **deps:** Update DevKit to release-3.7.0
-* **deps:** Update DevKit to release-3.8.0
-
-
-### Noise Session Manager
-
-* **noise:** Add metrics API
-* **noise:** Add metrics for noise
-* **noise:** Switch to OTel-style metric names
 
 
 ### TLS Session Manager
@@ -458,78 +102,7 @@ All notable changes to this project will be documented in this file. See [commit
 * **tsm:** declare service using SDK
 * **tsm:** Implement TLS handshake portion
 
-
-### Features
-
-* Add EzShmSlabPool wrapper to Rust SDK
-* **boringssl:** Extract BoringSSL patch to a separate module
-* Default env_logger to INFO level in all Ratified Isolates
-* **metrics:** Configure metrics for ratified isolates
-* Move env logger crate to SDK
-* Port Rust ShmSlabPool impl from enforcer
-* Read incoming unary InvokeEzResponses from shared memory
-* Read incoming unary InvokeIsolateRequests from shared memory
-* Set default UDS path for OTel metrics
-* Support streaming shared memory payloads for InvokeEzBridge
-* Support streaming shared memory payloads for InvokeIsolateBridge
-* Use encrypted_zone.ratified_isolate. metric prefix
-* Write outbound unary InvokeEzRequests to shared memory
-* Write outbound unary InvokeIsolateResponses to shared memory
-
-
-### Bug Fixes
-
-* have rust analzyer script use devkit
-* occasional certificate time skew failure in EZ Aratea
-
-## 0.8.0 (2026-05-18)
-
-
-### Dependencies
-
-* **deps:** Update DevKit to release-3.6.0
-
-
-### Noise Session Manager
-
-* **noise:** Use SDK service
-
-
-### SDK
-
-* **sdk:** Clean up SDK
-* **sdk:** Manual sync of SDK
-* **sdk:** Sync Otel from SDK
-
-
-### Traces
-
-* **traces:** Adjust sampling rate
-
-
-### Features
-
-* **tat:** only allow Smart Trust features
-
-
-### Bug Fixes
-
-* **tat:** Hybrid payload and pip2
-
 ## 0.7.0 (2026-05-11)
-
-
-### Dependencies
-
-* **deps:** Update DevKit to release-3.1.1
-* **deps:** Update DevKit to release-3.2.0
-* **deps:** Update DevKit to release-3.3.0
-* **deps:** Update DevKit to release-3.4.0
-* **deps:** Update DevKit to release-3.5.0
-* **deps:** Update SDK otel and tonic versions
-* **deps:** Update SDK to 0.14.0
-* **deps:** Use enforcer protos from SDK in NSM
-* **deps:** Use enforcer protos from SDK in oracle
 
 
 ### Crypto Oracle
@@ -538,113 +111,16 @@ All notable changes to this project will be documented in this file. See [commit
 * **oracle:** Update oracle proto package and path
 
 
-### Noise Session Manager
-
-* **noise:** Cert caching default disabled
-* **noise:** Fix service name typo
-* **noise:** Remove bridge from NSM tests
-* **noise:** Remove extra result from server channel
-* **noise:** Remove unneeded mapping in bridge
-* **noise:** Store BKM in OnceCell
-* **noise:** Use call-specific methods in invoker
-
-
-### Approver
-
-* **approver:** Add grpc_connector to approver
-* **approver:** Add traces configuration to approver
-* **approver:** Add traces instrumentation to approver
-* **approver:** Add traces to approver
-
-
-### Anonymous Token Service
-
-* **ats:** Add buff_lint_test for ATS
-* **ats:** Add grpc_connector to anonymous_token_spender
-* **ats:** Add traces configuration to anynymous_token_spender
-* **ats:** Add traces instrumentation to ats
-* **ats:** Add traces to anynymous_token_spender
-
-
 ### Features
 
-* Add use_devkit Rule for Jeskit
-* Add v1 to NSM proto package name
-* Copy (inline) EZ rust sdk into ratified-isolates repo
 * **crypto_oracle:** Add grpc_connector to crypto_oracle
 * **crypto_oracle:** Add trace configuration to crypto_oracle
 * **crypto_oracle:** Add traces to crypto_oracle
 * **crypto_oracle:** Add tracing instrumentation to crypto_oracle
-* Enable devkit/gitlinks check during pre-commit
-* Extract grpc_connector and traces to shared_lib
-* ignore .agents/ dir used for Jetski Rules/Skills
-* manual sync of GoB SDK
-* **nsm:** Add traces to nsm
-* **nsm:** Copy grpc_connector from enforcer
-* **nsm:** Copy traces from enforcer
-* Remove unused dependency
-* **sdk:** Various fixes for repo to build on it's own
-* setup tls_session_manager boilerplate
-* Trusted Aratea Traffic Ratified Isolate
-
-
-### Bug Fixes
-
-* Add buf_lint_test for NSM
-* airlock builds require archive_override instead of git_override
-* make `span.set_parent()` error non fatal
-
-## 0.6.0 (2026-04-02)
-
-
-### Dependencies
-
-* **deps:** Switch from tokio-retry to tokio-retry2
-* **deps:** Update DevKit to release-2.12.0
-* **deps:** Update DevKit to release-2.13.0
-* **deps:** Update DevKit to release-2.14.0
-* **deps:** Update DevKit to release-2.15.0
-* **deps:** Update DevKit to release-3.0.0
-* **deps:** update SDK to 0.11.0
-* **deps:** Update SDK to 0.13.0
-* **deps:** upgrade rules_python to 1.9.0
-
-
-### Noise Session Manager
-
-* **noise:** Add SDK as dependency
-* **noise:** Add SDK service target
-* **noise:** Use SDK crates when possible
-
-
-### Features
-
-* Fix rules_python compatibility issues workspace-wide
-* **nsm:** Revert Switch from tokio-retry to tokio-retry2"
-* standardize internal build and test scripts across modules
-* Use AnonymousTokensRedemptionService stub
-* Use stub for forwarding Private Aratea req
-
-
-### Bug Fixes
-
-* Fix ATS scope configs
 
 ## 0.5.0 (2026-03-04)
-
-
-### Dependencies
-
-* **deps:** Update DevKit to release-2.11.0
 
 
 ### Crypto Oracle
 
 * **oracle:** start oracle with public DataScope
-
-## 0.4.0 (2026-02-09)
-
-
-### Features
-
-* Initial release

@@ -1,0 +1,4 @@
+[submodule ".devkit"]
+	path = .devkit
+	url = sso://privacysandbox/hit/devkit
+	branch = release-3.8.0

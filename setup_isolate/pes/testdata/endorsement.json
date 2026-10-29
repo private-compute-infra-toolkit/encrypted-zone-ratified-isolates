@@ -1,0 +1,46 @@
+{
+  "_type": "https://in-toto.io/Statement/v1",
+  "predicateType": "https://project-oak.github.io/oak/tr/endorsement/v1",
+  "subject": [
+    {
+      "name": "crypto_oracle",
+      "digest": {
+        "sha256": "b9b8312a420400f6698af90261478657d83f7efe0b45ad9473c217b83c63d821"
+      }
+    }
+  ],
+  "predicate": {
+    "issuedOn": "2026-08-27T14:52:00.199000Z",
+    "validity": {
+      "notBefore": "2026-08-27T14:52:00.199000Z",
+      "notAfter": "2026-10-26T14:52:00.199000Z"
+    },
+    "claims": [
+      {
+        "type": "https://github.com/private-compute-infra-toolkit/public-endorsement-service/blob/main/docs/claims/artifact.md",
+        "annotations": {
+          "filename": "crypto_oracle/isolate_rootfs.tar"
+        }
+      },
+      {
+        "type": "https://github.com/private-compute-infra-toolkit/public-endorsement-service/blob/main/docs/claims/publisher.md",
+        "annotations": {
+          "publisher_id": "pcit-release-bot@google.com"
+        }
+      },
+      {
+        "type": "https://github.com/private-compute-infra-toolkit/public-endorsement-service/blob/main/docs/claims/source.md",
+        "annotations": {
+          "github_url": "https://github.com/private-compute-infra-toolkit/encrypted-zone-ratified-isolates",
+          "ref": "refs/tags/0.16.0"
+        }
+      },
+      {
+        "type": "https://github.com/project-oak/oak/blob/main/docs/tr/claim/19224.md"
+      },
+      {
+        "type": "https://github.com/project-oak/oak/blob/main/docs/tr/claim/26208.md"
+      }
+    ]
+  }
+}

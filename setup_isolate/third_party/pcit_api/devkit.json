@@ -1,0 +1,19 @@
+{
+  "docker": {
+    "registry": {
+      "host": "us-docker.pkg.dev",
+      "project": "kiwi-air-force-remote-build",
+      "repository": "privacysandbox",
+      "namespace": "privacysandbox/pcit/api"
+    },
+    "images": {
+      "build-env": {
+        "packages": {
+          "default-jre-headless": "*",
+          "libpython3-stdlib": "3.*",
+          "python3-minimal": "*"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,74 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+label_flag(
+    name = "pes_certs",
+    build_setting_default = "//:pes_root_certs_prod",
+    visibility = ["//visibility:public"],
+)
+
+# Concatenates all trusted PES root certificates into one PEM bundle. Parsing it
+# as a PEM chain yields one verifying key per certificate.
+genrule(
+    name = "bundle_pes_certs",
+    srcs = [":pes_certs"],
+    outs = ["src/pes_certs.pem"],
+    cmd = "for cert in $(SRCS); do cat $$cert; echo; done > $@",
+)
+
+rust_library(
+    name = "pes",
+    srcs = ["src/lib.rs"],
+    compile_data = [":bundle_pes_certs"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//v1:setup_isolate_rust",
+        "//v1:timestamp_proto_rust",
+        "@crates//:anyhow",
+        "@crates//:prost-types",
+        "@crates//:thiserror",
+        "@oak//oak_attestation_verification",
+        "@oak//oak_proto_rust",
+        "@oak//oak_time",
+        "@oak//oak_time:oak_time_std",
+        "@oak_crates_index//:base64",
+        "@oak_crates_index//:serde",
+        "@oak_crates_index//:serde_json",
+        "@oak_crates_index//:x509-cert",
+    ],
+)
+
+rust_test(
+    name = "pes_test",
+    size = "small",
+    srcs = ["test/pes_test.rs"],
+    data = [":testdata"],
+    deps = [
+        ":pes",
+        "//v1:setup_isolate_rust",
+        "@crates//:anyhow",
+        "@oak//oak_time",
+        "@oak_crates_index//:prost",
+        "@oak_crates_index//:serde_json",
+        "@rules_rust//tools/runfiles",
+    ],
+)
+
+filegroup(
+    name = "testdata",
+    srcs = glob(["testdata/*"]),
+    visibility = ["//visibility:public"],
+)

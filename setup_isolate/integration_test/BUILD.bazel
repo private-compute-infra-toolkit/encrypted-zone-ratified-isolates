@@ -1,0 +1,51 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+load("@rules_rust//rust:defs.bzl", "rust_test")
+
+rust_test(
+    name = "setup_integration_test",
+    size = "small",
+    srcs = ["setup_integration_test.rs"],
+    args = ["--test-threads=1"],
+    data = [
+        "//:setup_isolate",
+    ],
+    env = {
+        "CLIENT_UDS_PATH": "/dev/shm/ez_setup_integration_test/test_client.uds",
+        "READY_FIFO_PATH": "/dev/shm/ez_setup_integration_test/test_ready.fifo",
+        "SERVER_UDS_PATH": "/dev/shm/ez_setup_integration_test/test_server.uds",
+    },
+    deps = [
+        "//service:setup_isolate_lib",
+        "//v1:setup_isolate_rust",
+        "//v1:setup_service",
+        "@crates//:hyper-util",
+        "@crates//:log",
+        "@crates//:nix",
+        "@crates//:once_cell",
+        "@crates//:prost",
+        "@crates//:rand",
+        "@crates//:tokio",
+        "@crates//:tokio-stream",
+        "@crates//:tonic",
+        "@crates//:tower",
+        "@oak_crates_index//:anyhow",
+        "@privacy-sandbox-ez-sdk//enforcer/v1:data_scope_rust",
+        "@privacy-sandbox-ez-sdk//enforcer/v1:enforcer_rust",
+        "@privacy-sandbox-ez-sdk//enforcer/v1:ez_mtls_rust",
+        "@privacy-sandbox-ez-sdk//enforcer/v1:payload_rust",
+        "@rules_rust//tools/runfiles",
+    ],
+)

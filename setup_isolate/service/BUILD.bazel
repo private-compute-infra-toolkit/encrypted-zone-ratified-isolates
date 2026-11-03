@@ -1,0 +1,52 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+rust_library(
+    name = "setup_isolate_lib",
+    srcs = ["src/setup_service.rs"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//metrics",
+        "//pes",
+        "//v1:setup_isolate_rust",
+        "//v1:setup_service",
+        "@crates//:log",
+        "@crates//:prost",
+        "@crates//:rand",
+        "@crates//:tokio",
+        "@crates//:tokio-stream",
+        "@crates//:tonic",
+        "@oak//oak_time:oak_time_std",
+        "@oak_crates_index//:anyhow",
+        "@privacy-sandbox-ez-sdk//enforcer/v1:enforcer_rust",
+        "@privacy-sandbox-ez-sdk//enforcer/v1:ez_mtls_rust",
+        "@privacy-sandbox-ez-sdk//enforcer/v1:payload_rust",
+    ],
+)
+
+rust_test(
+    name = "setup_service_test",
+    size = "small",
+    srcs = ["test/setup_service_test.rs"],
+    deps = [
+        ":setup_isolate_lib",
+        "//v1:setup_isolate_rust",
+        "//v1:setup_service",
+        "@crates//:prost",
+        "@crates//:tokio",
+        "@crates//:tonic",
+    ],
+)

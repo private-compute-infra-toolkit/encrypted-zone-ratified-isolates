@@ -34,6 +34,7 @@ use rcgen::{CertificateParams, KeyPair, PKCS_ECDSA_P256_SHA256};
 use setup_isolate_proto::setup_isolate::v1::FetchFrontendTlsCertificateRequest;
 
 use enforcer_proto::enforcer::v1::IsolateState;
+use tokio::sync::OnceCell;
 
 const RESPONSE_STREAM_CAPACITY: usize = 128;
 
@@ -53,8 +54,6 @@ pub struct TsmConfig {
     pub server_key_pem: Option<String>,
 }
 
-use tokio::sync::OnceCell;
-
 #[with_sdk_client]
 pub struct TlsSessionManager {
     #[allow(dead_code)]
@@ -71,10 +70,11 @@ impl std::fmt::Debug for TlsSessionManager {
     }
 }
 impl TlsSessionManager {
-    pub fn new(ez_invoker: Arc<dyn ez_invoker::EzInvoker>, tsm_config: TsmConfig) -> Self {
-        let server_context_cell = Arc::new(OnceCell::new());
-
-        if !tsm_config.enable_avs {
+    pub fn new(
+        ez_invoker: Arc<dyn ez_invoker::EzInvoker>,
+        tsm_config: TsmConfig,
+    ) -> anyhow::Result<Self> {
+        let server_context_cell = if !tsm_config.enable_avs {
             let provider = if let (Some(cert_pem), Some(key_pem)) =
                 (tsm_config.server_cert_pem, tsm_config.server_key_pem)
             {
@@ -90,7 +90,7 @@ impl TlsSessionManager {
                 )
             } else {
                 oak_session_tls::utils::create_self_signed()
-                    .expect("failed to create self-signed certificate provider")
+                    .context("failed to create self-signed certificate provider")?
             };
 
             let config = ServerContextConfig {
@@ -99,22 +99,21 @@ impl TlsSessionManager {
                 custom_cert_verifier: None,
             };
             let server_context = OakSessionTlsServerContext::create(config)
-                .expect("failed to create TLS server context");
-            if server_context_cell.set(Ok(server_context)).is_err() {
-                panic!("Failed to set TLS server context OnceCell");
-            }
+                .context("failed to create TLS server context")?;
+            Arc::new(OnceCell::new_with(Some(Ok(server_context))))
         } else {
             log::info!(
                 "AVS is enabled for TLS Server Context. Skipping server context initialization."
             );
-        }
+            Arc::new(OnceCell::new())
+        };
 
-        Self {
+        Ok(Self {
             server_target: tsm_config.server_target,
             server_context_cell,
             ez_invoker,
             client: Default::default(),
-        }
+        })
     }
 
     async fn get_or_init_server_context(

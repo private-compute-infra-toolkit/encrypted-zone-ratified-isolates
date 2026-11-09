@@ -16,13 +16,18 @@ load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
 
 rust_library(
     name = "setup_isolate_lib",
-    srcs = ["src/setup_service.rs"],
+    srcs = [
+        "src/cert_bundle.rs",
+        "src/setup_service.rs",
+    ],
+    crate_root = "src/setup_service.rs",
     visibility = ["//visibility:public"],
     deps = [
         "//metrics",
         "//pes",
         "//v1:setup_isolate_rust",
         "//v1:setup_service",
+        "@crates//:boring",
         "@crates//:log",
         "@crates//:prost",
         "@crates//:rand",
@@ -31,8 +36,8 @@ rust_library(
         "@crates//:tonic",
         "@oak//oak_time:oak_time_std",
         "@oak_crates_index//:anyhow",
+        "@oak_crates_index//:x509-cert",
         "@privacy-sandbox-ez-sdk//enforcer/v1:enforcer_rust",
-        "@privacy-sandbox-ez-sdk//enforcer/v1:ez_mtls_rust",
         "@privacy-sandbox-ez-sdk//enforcer/v1:payload_rust",
     ],
 )
@@ -40,13 +45,22 @@ rust_library(
 rust_test(
     name = "setup_service_test",
     size = "small",
-    srcs = ["test/setup_service_test.rs"],
+    srcs = [
+        "test/mock_bridge.rs",
+        "test/pki_fixtures.rs",
+        "test/setup_service_test.rs",
+    ],
+    crate_root = "test/setup_service_test.rs",
     deps = [
         ":setup_isolate_lib",
         "//v1:setup_isolate_rust",
         "//v1:setup_service",
         "@crates//:prost",
         "@crates//:tokio",
+        "@crates//:tokio-stream",
         "@crates//:tonic",
+        "@oak_crates_index//:rcgen",
+        "@privacy-sandbox-ez-sdk//enforcer/v1:enforcer_rust",
+        "@privacy-sandbox-ez-sdk//enforcer/v1:payload_rust",
     ],
 )

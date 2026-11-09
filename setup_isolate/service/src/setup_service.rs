@@ -12,15 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod cert_bundle;
+
 use metrics::Metrics;
 use std::time::Instant;
 use tonic::{Request, Response, Status};
 
-use ez_mtls_proto::enforcer::v1::{GetCertificateRequest, GetCertificateResponse, PolicyHint};
 use oak_time_std::clock::SystemTimeClock;
 use setup_isolate_proto::setup_isolate::v1::{
     FetchFrontendTlsCertificateRequest, FetchFrontendTlsCertificateResponse,
-    FetchTlsCertificateRequest, FetchTlsCertificateResponse, GetTlsCsrRequest, GetTlsCsrResponse,
+    FetchTlsCertificateRequest, FetchTlsCertificateResponse, GetCertificateRequest,
+    GetCertificateResponse, GetTlsCsrRequest, GetTlsCsrResponse, PolicyHint,
     ValidateIsolateEndorsementRequest, ValidateIsolateEndorsementResponse,
 };
 use setup_isolate_sdk::{
@@ -28,17 +30,22 @@ use setup_isolate_sdk::{
     with_sdk_client,
 };
 
-/// Configuration for the Setup Ratified Isolate
+/// Configuration for the Setup Ratified Isolate.
 #[derive(Debug, Clone, Default)]
 pub struct SetupConfig {
     pub operator_role: String,
+    /// Allows backend mTLS to trust and emit unattested fallback CA
+    /// certificates (derived from a public seed, disabling backend peer
+    /// identity enforcement). Must only be set from a measured manifest (only
+    /// enable in probes until pscl/125898 lands or Manifest v2 / b/473069123
+    /// is enforced). Frontend TLS remains strictly fail-closed.
+    pub enable_unattested_fallback: bool,
 }
 
 /// Setup Service implementation supports multiple bootstrapping methods defined in
 /// setup_isolate_proto::setup_isolate::v1.
 #[with_sdk_client]
 pub struct SetupService {
-    #[allow(dead_code)]
     config: SetupConfig,
     metrics: Metrics,
 }
@@ -68,7 +75,7 @@ impl SetupService {
         );
 
         let get_cert_req = GetCertificateRequest {
-            csr: signed_csr,
+            csr: signed_csr.clone(),
             operator_role: self.config.operator_role.clone(),
             policy_hint: policy_hint.into(),
         };
@@ -111,12 +118,15 @@ impl SetupService {
 
         let get_cert_resp: GetCertificateResponse = result?;
 
-        // The last element in the certs vector is the trust anchor.
-        let mut certs = get_cert_resp.certs;
-        let trust_anchors = match certs.pop() {
-            Some(root_cert) => vec![root_cert],
-            None => Vec::new(),
-        };
+        let allow_fallback =
+            self.config.enable_unattested_fallback && policy_hint == PolicyHint::BackendMtlsCert;
+        let (certs, trust_anchors) = cert_bundle::process_certificate_response(
+            std::time::SystemTime::now(),
+            &signed_csr,
+            get_cert_resp,
+            allow_fallback,
+            &self.metrics,
+        )?;
 
         log::info!(
             "Processed certificates. Chain size: {}, trust anchors size: {}",

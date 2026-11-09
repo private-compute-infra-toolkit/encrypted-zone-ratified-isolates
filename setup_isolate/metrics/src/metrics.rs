@@ -12,10 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use ez_mtls_proto::enforcer::v1::PolicyHint;
 use opentelemetry::metrics::{Counter, Histogram};
 use opentelemetry::{KeyValue, global};
-use setup_isolate_proto::setup_isolate::v1::validate_isolate_endorsement_response::IsolateEndorsementValidationError;
+use setup_isolate_proto::setup_isolate::v1::{
+    PolicyHint, validate_isolate_endorsement_response::IsolateEndorsementValidationError,
+};
 
 /// Metric names for setup_isolate
 pub const RPC_COUNT_NAME: &str = crate::metric_name!("rpc_count");
@@ -23,6 +24,7 @@ pub const CERTIFICATE_FETCH_COUNT_NAME: &str = crate::metric_name!("certificate_
 pub const PES_VALIDATION_OUTCOME_NAME: &str = crate::metric_name!("pes_validation_outcome");
 pub const RPC_LATENCIES_NAME: &str = crate::metric_name!("rpc_latencies");
 pub const AVS_PROXY_RPC_LATENCIES_NAME: &str = crate::metric_name!("avs_proxy_rpc_latencies");
+pub const UNATTESTED_FALLBACK_COUNT_NAME: &str = crate::metric_name!("unattested_fallback_count");
 
 /// Metrics used by the Setup Ratified Isolate
 #[derive(Debug, Clone)]
@@ -30,6 +32,7 @@ pub struct Metrics {
     pub rpc_count: Counter<u64>,
     pub certificate_fetch_count: Counter<u64>,
     pub pes_validation_outcome: Counter<u64>,
+    pub unattested_fallback_count: Counter<u64>,
     pub rpc_latencies: Histogram<f64>,
     pub avs_proxy_rpc_latencies: Histogram<f64>,
 }
@@ -50,6 +53,10 @@ impl Default for Metrics {
             .u64_counter(PES_VALIDATION_OUTCOME_NAME)
             .with_description("Counts PES isolate endorsement validation outcomes.")
             .build();
+        let unattested_fallback_count = meter
+            .u64_counter(UNATTESTED_FALLBACK_COUNT_NAME)
+            .with_description("Counts backend mTLS unattested fallback events by outcome.")
+            .build();
         let rpc_latencies = meter
             .f64_histogram(RPC_LATENCIES_NAME)
             .with_description("Execution latency of SetupService RPC handlers in s.")
@@ -69,6 +76,7 @@ impl Default for Metrics {
             rpc_count,
             certificate_fetch_count,
             pes_validation_outcome,
+            unattested_fallback_count,
             rpc_latencies,
             avs_proxy_rpc_latencies,
         }
@@ -130,6 +138,12 @@ impl Metrics {
     /// Records the latency of external calls to thick/avs-proxy in seconds.
     pub fn record_avs_proxy_latency(&self, latency_s: f64) {
         self.avs_proxy_rpc_latencies.record(latency_s, &[]);
+    }
+
+    /// Records a backend mTLS unattested fallback event (`standalone_leaf` or `invalid_bridge`).
+    pub fn record_unattested_fallback(&self, outcome: &str) {
+        self.unattested_fallback_count
+            .add(1, &[KeyValue::new("outcome", outcome.to_string())]);
     }
 }
 

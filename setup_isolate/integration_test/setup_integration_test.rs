@@ -180,6 +180,51 @@ async fn test_fetch_frontend_tls_certificate_success() {
     assert_eq!(response_msg.trust_anchors, vec![vec![5, 6, 7, 8]]);
     harness.stop().await.expect("Harness should stop");
 }
+
+#[tokio::test]
+async fn test_start_with_enable_unattested_fallback_flag() {
+    let harness = TestHarness::start_with_args(&["--enable-unattested-fallback"])
+        .await
+        .expect("Harness should start with fallback flag enabled");
+    assert_eq!(
+        *harness.service.latest_state.lock().await,
+        Some(IsolateState::Ready)
+    );
+    let mut client = harness.client.clone();
+    let request_msg = FetchTlsCertificateRequest {
+        signed_certificate_signing_request: vec![10, 20, 30],
+    };
+    let invoke_request = InvokeIsolateRequest {
+        control_plane_metadata: Some(ControlPlaneMetadata {
+            ipc_message_id: rand::random(),
+            destination_operator_domain: "ServerDomain".to_string(),
+            destination_service_name: "SetupService".to_string(),
+            destination_method_name: "FetchMtlsCertificate".to_string(),
+            ..Default::default()
+        }),
+        isolate_input: Some(EzHybridPayload {
+            delivery_method: Some(DeliveryMethod::InlineData(EzPayloadData {
+                datagrams: vec![request_msg.encode_to_vec()],
+            })),
+        }),
+        ..Default::default()
+    };
+    let invoke_resp = client
+        .invoke_isolate(invoke_request)
+        .await
+        .unwrap()
+        .into_inner();
+    let mut response_bytes = match invoke_resp.isolate_output.unwrap().delivery_method {
+        Some(DeliveryMethod::InlineData(data)) => data.datagrams,
+        _ => panic!("Expected InlineData"),
+    };
+    let response_msg =
+        FetchTlsCertificateResponse::decode(response_bytes.pop().unwrap().as_slice()).unwrap();
+    assert_eq!(response_msg.certificate_chain, vec![vec![1, 2, 3, 4]]);
+    assert_eq!(response_msg.trust_anchors, vec![vec![5, 6, 7, 8]]);
+    harness.stop().await.expect("Harness should stop");
+}
+
 #[derive(Debug, Default, Clone)]
 struct MockIsolateEzBridge {
     latest_state: Arc<Mutex<Option<IsolateState>>>,
@@ -331,6 +376,10 @@ struct TestHarness {
 }
 impl TestHarness {
     async fn start() -> anyhow::Result<Self> {
+        Self::start_with_args(&[]).await
+    }
+
+    async fn start_with_args(extra_args: &[&str]) -> anyhow::Result<Self> {
         // Ensure parent directory for UDS and FIFO exists.
         let server_uds_path = Path::new(SERVER_UDS_PATH.as_str());
         if let Some(parent) = server_uds_path.parent() {
@@ -386,6 +435,7 @@ impl TestHarness {
             .arg("disabled")
             .arg("--otel-traces-endpoint")
             .arg("disabled")
+            .args(extra_args)
             .stderr(Stdio::inherit())
             .stdout(Stdio::inherit());
         let child = command

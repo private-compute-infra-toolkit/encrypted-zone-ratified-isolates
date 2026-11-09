@@ -75,7 +75,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     log::info!("Starting TSM Isolate server...");
 
-    let tsm_logic = Arc::new(TlsSessionManager::new(ez_invoker.clone(), tsm_config));
+    let tsm_logic = Arc::new(TlsSessionManager::new(ez_invoker.clone(), tsm_config)?);
 
     let server = create_isolate_server_with_resp_scope_and_client! {
         // TODO(b/484030934): Update to specify supported methods once per-method

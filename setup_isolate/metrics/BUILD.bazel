@@ -22,7 +22,6 @@ rust_library(
     deps = [
         "//v1:setup_isolate_rust",
         "@crates//:opentelemetry",
-        "@privacy-sandbox-ez-sdk//enforcer/v1:ez_mtls_rust",
     ],
 )
 
@@ -35,6 +34,5 @@ rust_test(
         "//v1:setup_isolate_rust",
         "@crates//:opentelemetry",
         "@crates//:opentelemetry_sdk",
-        "@privacy-sandbox-ez-sdk//enforcer/v1:ez_mtls_rust",
     ],
 )

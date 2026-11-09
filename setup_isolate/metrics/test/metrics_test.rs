@@ -12,14 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use ez_mtls_proto::enforcer::v1::PolicyHint;
 use metrics::{
     AVS_PROXY_RPC_LATENCIES_NAME, CERTIFICATE_FETCH_COUNT_NAME, Metrics,
     PES_VALIDATION_OUTCOME_NAME, RPC_COUNT_NAME, RPC_LATENCIES_NAME,
+    UNATTESTED_FALLBACK_COUNT_NAME,
 };
 use opentelemetry::global;
 use opentelemetry_sdk::metrics::{InMemoryMetricExporter, PeriodicReader, SdkMeterProvider};
-use setup_isolate_proto::setup_isolate::v1::validate_isolate_endorsement_response::IsolateEndorsementValidationError;
+use setup_isolate_proto::setup_isolate::v1::{
+    PolicyHint, validate_isolate_endorsement_response::IsolateEndorsementValidationError,
+};
 
 #[test]
 fn test_metrics_recording_and_validation() {
@@ -34,6 +36,7 @@ fn test_metrics_recording_and_validation() {
     metrics.record_pes_validation_outcome(IsolateEndorsementValidationError::Unspecified);
     metrics.record_rpc_latency("GetTlsCsr", 0.0125);
     metrics.record_avs_proxy_latency(0.045);
+    metrics.record_unattested_fallback("standalone_leaf");
 
     provider.force_flush().expect("Flush failed");
 
@@ -71,6 +74,11 @@ fn test_metrics_recording_and_validation() {
         metric_names.contains(&AVS_PROXY_RPC_LATENCIES_NAME),
         "Missing {}",
         AVS_PROXY_RPC_LATENCIES_NAME
+    );
+    assert!(
+        metric_names.contains(&UNATTESTED_FALLBACK_COUNT_NAME),
+        "Missing {}",
+        UNATTESTED_FALLBACK_COUNT_NAME
     );
 }
 

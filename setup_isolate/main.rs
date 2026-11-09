@@ -40,6 +40,17 @@ struct Args {
         default_value = "unix:///enforcer-isolate-shared/otlp-metrics.sock"
     )]
     otel_metrics_endpoint: String,
+    /// Allow backend mTLS fallback CAs derived from a public seed without
+    /// hardware attestation. Because the fallback root key is public, enabling
+    /// this disables backend mTLS peer identity enforcement (even when this
+    /// node holds an attested certificate) and must only be set via a measured
+    /// manifest.
+    // TODO(b/473069123): Under Manifest v1, runtime configs can still override
+    // ratified isolate args (fixed by pscl/125898) and the host launcher can
+    // rewrite the manifest. Only enable this flag for probes/testing until
+    // pscl/125898 lands or Manifest v2 is enabled.
+    #[arg(long, default_value_t = false)]
+    enable_unattested_fallback: bool,
 }
 
 #[tokio::main]
@@ -68,8 +79,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         }
     };
 
-    log::info!("Starting Setup Ratified Isolate");
-    let setup_service = Arc::new(SetupService::new(SetupConfig { operator_role }));
+    log::info!(
+        "Starting Setup Ratified Isolate (enable_unattested_fallback={})",
+        args.enable_unattested_fallback
+    );
+    let setup_service = Arc::new(SetupService::new(SetupConfig {
+        operator_role,
+        enable_unattested_fallback: args.enable_unattested_fallback,
+    }));
 
     log::info!("Starting Setup Ratified Isolate Server");
     let server = setup_isolate_sdk::create_isolate_server_with_resp_scope_and_client! {

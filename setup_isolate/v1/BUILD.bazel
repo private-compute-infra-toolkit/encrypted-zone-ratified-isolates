@@ -25,6 +25,13 @@ proto_library(
 )
 
 proto_library(
+    name = "proxy_certificate_proto",
+    srcs = ["proxy_certificate.proto"],
+    import_prefix = "setup_isolate/",
+    visibility = ["//visibility:public"],
+)
+
+proto_library(
     name = "setup_isolate_proto_only",
     srcs = ["setup.proto"],
     import_prefix = "setup_isolate/",
@@ -40,6 +47,7 @@ proto_library(
     name = "setup_isolate_proto",
     srcs = [
         "isolate_package_endorsement.proto",
+        "proxy_certificate.proto",
         "setup.proto",
     ],
     import_prefix = "setup_isolate/",

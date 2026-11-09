@@ -2,9 +2,21 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
-## 0.21.0 (2026-11-03)
+## 0.22.0 (2026-11-09)
 
-_No user-facing changes to open-sourced Ratified Isolates in this release._
+
+### Setup Isolate
+
+* **setup:** add --enable-unattested-fallback startup flag
+* **setup:** add wire-compatible proxy_certificate proto
+* **setup:** verify CSR and CertificateBundle chains in SetupService ([3105aca]( )), closes [PKCS#10]( )
+* **setup:** verify RotatedTrustAnchor root key rotations
+* **setup:** verify UnattestedFallbackBundle bridge and standalone leaf
+
+
+### TLS Session Manager
+
+* **tsm:** return Result in TlsSessionManager::new
 
 ## 0.19.0 (2026-10-15)
 

@@ -236,7 +236,8 @@ async fn test_start_tls_session_handshake() {
             server_cert_pem: Some(server_cert_pem),
             server_key_pem: Some(server_key_pem),
         },
-    );
+    )
+    .expect("failed to create TlsSessionManager");
 
     let (mut tsm_client, shutdown_tx) = start_tsm(tsm).await.unwrap();
 
@@ -450,7 +451,8 @@ async fn test_start_tls_session_dynamic_fake_service() {
             server_cert_pem: Some(server_cert_pem),
             server_key_pem: Some(server_key_pem),
         },
-    );
+    )
+    .expect("failed to create TlsSessionManager");
 
     let (mut tsm_client, shutdown_tx) = start_tsm(tsm).await.unwrap();
 
@@ -566,7 +568,8 @@ async fn test_async_fetch_avs_cert_ready_signaling() -> Result<()> {
             server_cert_pem: None,
             server_key_pem: None,
         },
-    );
+    )
+    .expect("failed to create TlsSessionManager");
 
     tsm.start_async_certificate_fetch();
 
@@ -600,7 +603,8 @@ async fn test_avs_tls_handshake_success() {
             server_cert_pem: None,
             server_key_pem: None,
         },
-    );
+    )
+    .expect("failed to create TlsSessionManager");
 
     tsm.start_async_certificate_fetch();
 
@@ -697,7 +701,8 @@ async fn test_avs_tls_handshake_failure_propagation() {
             server_cert_pem: None,
             server_key_pem: None,
         },
-    );
+    )
+    .expect("failed to create TlsSessionManager");
 
     tsm.start_async_certificate_fetch();
 
@@ -748,7 +753,8 @@ async fn test_inner_stream_unavailable_error_propagation() {
             server_cert_pem: Some(server_cert_pem),
             server_key_pem: Some(server_key_pem),
         },
-    );
+    )
+    .expect("failed to create TlsSessionManager");
 
     let (mut tsm_client, shutdown_tx) = start_tsm(tsm).await.unwrap();
 
@@ -847,7 +853,8 @@ async fn test_tsm_debug_format_and_self_signed_init() {
             server_cert_pem: None,
             server_key_pem: None,
         },
-    );
+    )
+    .expect("failed to create TlsSessionManager");
 
     let debug_str = format!("{:?}", tsm);
     assert!(debug_str.contains("TlsSessionManager"));
@@ -873,7 +880,8 @@ async fn test_tls_handshake_invalid_frame_failure() {
             server_cert_pem: Some(server_cert_pem),
             server_key_pem: Some(server_key_pem),
         },
-    );
+    )
+    .expect("failed to create TlsSessionManager");
 
     let (mut tsm_client, shutdown_tx) = start_tsm(tsm).await.unwrap();
 
@@ -921,7 +929,8 @@ async fn test_client_decryption_failure_handling() {
             server_cert_pem: Some(server_cert_pem),
             server_key_pem: Some(server_key_pem),
         },
-    );
+    )
+    .expect("failed to create TlsSessionManager");
 
     let (mut tsm_client, shutdown_tx) = start_tsm(tsm).await.unwrap();
 
@@ -1098,7 +1107,8 @@ async fn run_start_tls_session_with_forwarded_metadata(
             server_cert_pem: Some(server_cert_pem),
             server_key_pem: Some(server_key_pem),
         },
-    );
+    )
+    .expect("failed to create TlsSessionManager");
 
     run_session_against_tsm(&tsm, forwarded_metadata).await;
 
@@ -1166,7 +1176,8 @@ async fn test_start_tls_session_handshake_failure_does_not_forward_metadata() {
             server_cert_pem: Some(server_cert_pem),
             server_key_pem: Some(server_key_pem),
         },
-    );
+    )
+    .expect("failed to create TlsSessionManager");
 
     let (request_tx, request_rx) = channel::<Result<StartTlsSessionRequest, tonic::Status>>(10);
     let mut service_request = tonic::Request::new(ReceiverStream::new(request_rx));
@@ -1218,7 +1229,8 @@ async fn test_start_tls_session_concurrent_sessions_isolate_forwarded_metadata()
             server_cert_pem: Some(server_cert_pem),
             server_key_pem: Some(server_key_pem),
         },
-    );
+    )
+    .expect("failed to create TlsSessionManager");
 
     let mut meta_a_map = std::collections::HashMap::new();
     meta_a_map.insert("session".to_string(), b"A".to_vec());

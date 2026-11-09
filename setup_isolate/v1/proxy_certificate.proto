@@ -1,0 +1,146 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package setup_isolate.v1;
+
+// Hint selecting which certificate profile to request from the external proxy.
+//
+// Wire values MUST remain identical to `enforcer.v1.PolicyHint` in
+// `ez_mtls.proto` to preserve wire compatibility across raw proxy payloads.
+enum PolicyHint {
+  // Default value, should not be used.
+  POLICY_HINT_UNSPECIFIED = 0;
+  // Frontend TLS certificate authenticating an EZ server to external clients.
+  POLICY_HINT_FRONTEND_TLS_CERT = 1;
+  // Backend mTLS certificate authenticating one EZ node to another EZ node.
+  POLICY_HINT_BACKEND_MTLS_CERT = 2;
+}
+
+// Certificate request sent by the Setup Isolate to the external EZ proxy.
+//
+// Field numbers and wire types MUST remain wire-compatible with
+// `enforcer.v1.GetCertificateRequest` in `ez_mtls.proto` because external proxy
+// payloads carry raw serialized protobuf bytes without message type names.
+message GetCertificateRequest {
+  // DER-encoded PKCS#10 Certificate Signing Request (CSR).
+  bytes csr = 1;
+
+  // Reserved to preserve wire compatibility with `enforcer.v1`'s attestation
+  // evidence and endorsements fields, which are supplied by the host proxy.
+  reserved 2, 3;
+
+  // Role of the operator matching the policy installed on the node.
+  string operator_role = 4;
+
+  // Certificate profile requested for `csr`.
+  PolicyHint policy_hint = 5;
+}
+
+// Certificate response returned by the external EZ proxy to the Setup Isolate.
+//
+// Field numbers 1 and 2 MUST remain wire-compatible with
+// `enforcer.v1.GetCertificateResponse` in `ez_mtls.proto` so existing EZ proxy
+// instances populating the legacy `certs` field continue to interoperate.
+message GetCertificateResponse {
+  // Reserved for legacy `cert_chain` wire compatibility with `enforcer.v1`.
+  reserved 1;
+
+  // Legacy ordered DER-encoded X.509 chain (`[leaf, intermediates..., root]`).
+  repeated bytes certs = 2;
+
+  // Structured attested certificate bundle carrying the leaf certificate,
+  // intermediate Sub-CAs, current trust anchor, and optional root rotation
+  // cross-certificates.
+  CertificateBundle certificate_bundle = 3;
+
+  // Optional unattested fallback CA credentials populated when the external
+  // certificate provider allows fail-open or interoperation with unattested
+  // fallback peers. Consumers must ignore this field unless unattested fallback
+  // is explicitly enabled.
+  UnattestedFallbackBundle unattested_fallback = 4;
+}
+
+// Bidirectional cross-signed CA certificates bridging an active root CA key
+// (`K_curr`) and a previously active root CA key (`K_prev`) across a root key
+// rotation window.
+//
+// Keep this message in sync with the external attestation certificate
+// provider's proto definition.
+message RotatedTrustAnchor {
+  // DER-encoded `CA:TRUE` X.509 certificate embedding `K_prev`'s subject and
+  // public key, signed by `K_curr` (`K_curr -> K_prev`).
+  bytes current_signs_previous = 1;
+
+  // DER-encoded `CA:TRUE` X.509 certificate embedding `K_curr`'s subject and
+  // public key, signed by `K_prev` (`K_prev -> K_curr`).
+  bytes previous_signs_current = 2;
+}
+
+// Structured certificate bundle separating the end-entity leaf, intermediate
+// Sub-CAs, active root trust anchor, and root rotation cross-certificates.
+//
+// Keep this message in sync with the external attestation certificate
+// provider's proto definition.
+message CertificateBundle {
+  // DER-encoded end-entity (`CA:FALSE`) leaf X.509 certificate bound to the
+  // caller's CSR public key.
+  bytes leaf_certificate = 1;
+
+  // Unordered DER-encoded intermediate Sub-CA (`CA:TRUE`) X.509 certificates
+  // forming the signing path from `leaf_certificate` up to the root authority.
+  repeated bytes sub_ca_certificates = 2;
+
+  // Self-signed DER-encoded root CA (`CA:TRUE`) X.509 certificate representing
+  // the currently active trust anchor (`K_curr -> K_curr`).
+  bytes current_trust_anchor = 3;
+
+  // Optional cross-signed CA certificate pairs bridging `current_trust_anchor`
+  // with retiring root CA keys during root key rotation windows.
+  repeated RotatedTrustAnchor rotated_trust_anchors = 4;
+}
+
+// Unattested fallback CA credentials used when hardware attestation fails or
+// when interoperating with unattested fallback peers.
+//
+// Keep this message in sync with the external attestation certificate
+// provider's proto definition.
+message UnattestedFallbackBundle {
+  // Self-signed DER-encoded root CA (`CA:TRUE`) X.509 certificate for the
+  // unattested fallback CA (`K_Fallback -> K_Fallback`).
+  //
+  // WARNING: `K_Fallback` is derived from a public seed, so anyone can sign
+  // arbitrary certificates with it. Once a node trusts this anchor, mTLS peer
+  // identity on that node is meaningless: add it to the trust store only when
+  // unattested fallback is explicitly enabled, and never rely on peer SPIFFE
+  // IDs while it is trusted.
+  bytes fallback_trust_anchor = 1;
+
+  // Optional DER-encoded `CA:TRUE` bridge X.509 certificate signed by
+  // `fallback_trust_anchor` over the current attested root CA, populated when
+  // `certificate_bundle` is present so unattested peers can verify this node's
+  // attested chain up to `fallback_trust_anchor`.
+  bytes fallback_bridge_certificate = 2;
+
+  // Optional DER-encoded end-entity (`CA:FALSE`) leaf X.509 certificate signed
+  // by `fallback_trust_anchor` over the caller's CSR public key carrying sole
+  // URI Subject Alternative Name
+  // `spiffe://untrusted-operator.untrusted-domain/operator/untrusted-operator/role/publisher/untrusted/role/workload/untrusted-fallback`,
+  // populated when attestation fails and fail-open is enabled. This URI must
+  // exactly match the external certificate provider's fallback SPIFFE ID
+  // constant (`kUnattestedFallbackSpiffeId`) and consumer checks so they do
+  // not drift.
+  bytes fallback_leaf_certificate = 3;
+}

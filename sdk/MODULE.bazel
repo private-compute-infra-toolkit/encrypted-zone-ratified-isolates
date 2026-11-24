@@ -17,17 +17,10 @@ module(
     version = "0.0.0",
 )
 
-local_repository = use_repo_rule("@bazel_tools//tools/build_defs/repo:local.bzl", "local_repository")
-
 bazel_dep(name = "sdk-patches", version = "0.0.0")
 local_path_override(
     module_name = "sdk-patches",
     path = "patches",
-)
-
-local_repository(
-    name = "google_privacysandbox_functionaltest_system",
-    path = "functionaltest-system",
 )
 
 bazel_dep(name = "abseil-cpp", version = "20260107.1", repo_name = "com_google_absl")

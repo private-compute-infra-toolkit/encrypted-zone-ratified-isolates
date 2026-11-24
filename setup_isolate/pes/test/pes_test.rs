@@ -74,8 +74,8 @@ fn load_endorsement_test_data(
     )
 }
 
-/// Tests embed several PES certificates (prod, which signed the endorsement,
-/// and staging), so this also covers verification against multiple PES keys.
+/// Tests embed several PES certificates from `testdata/test_root_certificates.pem`,
+/// so this also covers verification against multiple PES keys.
 #[test]
 fn test_verify_pes_endorsement_success() {
     let r = Runfiles::create().expect("Failed to create runfiles resolver");

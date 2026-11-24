@@ -72,3 +72,9 @@ filegroup(
     srcs = glob(["testdata/*"]),
     visibility = ["//visibility:public"],
 )
+
+filegroup(
+    name = "testdata_pes_certs",
+    srcs = ["testdata/test_root_certificates.pem"],
+    visibility = ["//visibility:public"],
+)

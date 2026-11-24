@@ -13,6 +13,8 @@
 // limitations under the License.
 //
 
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use derivative::Derivative;
 use enforcer_proto::data_scope_proto::enforcer::v1::DataScopeType;
 use enforcer_proto::enforcer::v1::ez_isolate_bridge_client::EzIsolateBridgeClient;
@@ -38,8 +40,9 @@ use rust_core::{
 use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::net::UnixStream;
-use tokio::sync::Mutex;
+use tokio::sync::{mpsc, Mutex};
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::transport::{Channel, Endpoint, Uri};
 use tonic::{IntoStreamingRequest, Request, Response, Status, Streaming};
@@ -276,6 +279,21 @@ impl IsolateRpcService for ErrorIsolateRpcService {
     }
 }
 
+const NOTIFY_STATE_CHANNEL_SIZE: usize = 16;
+const NOTIFY_STATE_PROCESSING_DELAY: Duration = Duration::from_millis(10);
+
+#[derive(Debug, Clone, Default)]
+pub enum NotifyStateBehavior {
+    #[default]
+    Ack,
+    StreamError(Status),
+    FailTimes {
+        remaining: usize,
+        status: Status,
+    },
+    CloseWithoutAck,
+}
+
 #[derive(Debug, Derivative, Clone)]
 #[derivative(Default)]
 pub struct MockIsolateEzBridgeServer {
@@ -285,8 +303,12 @@ pub struct MockIsolateEzBridgeServer {
     stream_call_count: Arc<AtomicUsize>,
     #[derivative(Default(value = "Arc::new(AtomicUsize::new(0))"))]
     stream_message_count: Arc<AtomicUsize>,
+    #[derivative(Default(value = "Arc::new(AtomicUsize::new(0))"))]
+    notify_state_call_count: Arc<AtomicUsize>,
     #[derivative(Default(value = "Arc::new(Mutex::new(None))"))]
     last_known_state: Arc<Mutex<Option<i32>>>,
+    #[derivative(Default(value = "Arc::new(Mutex::new(NotifyStateBehavior::Ack))"))]
+    notify_state_behavior: Arc<Mutex<NotifyStateBehavior>>,
     #[derivative(Default(value = "Arc::new(Mutex::new(None))"))]
     last_received_request: Arc<Mutex<Option<InvokeEzRequest>>>,
     #[derivative(Default(value = "Arc::new(Mutex::new(Vec::new()))"))]
@@ -308,6 +330,14 @@ impl MockIsolateEzBridgeServer {
         self.stream_message_count.load(Ordering::SeqCst)
     }
 
+    pub fn notify_state_call_count(&self) -> usize {
+        self.notify_state_call_count.load(Ordering::SeqCst)
+    }
+
+    pub fn reset_notify_state_call_count(&self) {
+        self.notify_state_call_count.store(0, Ordering::SeqCst);
+    }
+
     pub async fn last_known_state(&self) -> Option<i32> {
         *self.last_known_state.lock().await
     }
@@ -326,6 +356,10 @@ impl MockIsolateEzBridgeServer {
 
     pub async fn set_force_shm_response(&self, force: bool) {
         *self.force_shm_response.lock().await = force;
+    }
+
+    pub async fn set_notify_state_behavior(&self, behavior: NotifyStateBehavior) {
+        *self.notify_state_behavior.lock().await = behavior;
     }
 }
 
@@ -385,22 +419,48 @@ impl IsolateEzBridge for MockIsolateEzBridgeServer {
         Err(Status::unimplemented("unimplemented"))
     }
 
-    type NotifyIsolateStateStream = Pin<Box<dyn GrpcResponseStream<NotifyIsolateStateResponse>>>;
+    type NotifyIsolateStateStream = ReceiverStream<Result<NotifyIsolateStateResponse, Status>>;
     async fn notify_isolate_state(
         &self,
         request: Request<Streaming<NotifyIsolateStateRequest>>,
     ) -> Result<Response<Self::NotifyIsolateStateStream>, Status> {
+        self.notify_state_call_count.fetch_add(1, Ordering::SeqCst);
+        let mut stream = request.into_inner();
+        let (tx, rx) = mpsc::channel(NOTIFY_STATE_CHANNEL_SIZE);
         let last_known_state = self.last_known_state.clone();
-        let output_stream = request.into_inner().then(move |req| {
-            let last_known_state = last_known_state.clone();
-            async move {
-                let req = req.expect("Request should be Ok");
-                let mut state = last_known_state.lock().await;
-                *state = Some(req.new_isolate_state);
-                Ok(NotifyIsolateStateResponse::default())
+        let behavior = {
+            let mut guard = self.notify_state_behavior.lock().await;
+            match &mut *guard {
+                NotifyStateBehavior::FailTimes { remaining, status } if *remaining > 0 => {
+                    *remaining -= 1;
+                    NotifyStateBehavior::StreamError(status.clone())
+                }
+                NotifyStateBehavior::FailTimes { .. } => NotifyStateBehavior::Ack,
+                other => other.clone(),
+            }
+        };
+
+        // Process the request stream in a background task while returning the response
+        // ReceiverStream immediately, matching the real Enforcer IsolateEzBridge behavior.
+        tokio::spawn(async move {
+            tokio::time::sleep(NOTIFY_STATE_PROCESSING_DELAY).await;
+            while let Some(Ok(req)) = stream.next().await {
+                match &behavior {
+                    NotifyStateBehavior::Ack | NotifyStateBehavior::FailTimes { .. } => {
+                        *last_known_state.lock().await = Some(req.new_isolate_state);
+                        let _ = tx.send(Ok(NotifyIsolateStateResponse::default())).await;
+                    }
+                    NotifyStateBehavior::StreamError(status) => {
+                        let _ = tx.send(Err(status.clone())).await;
+                        return;
+                    }
+                    NotifyStateBehavior::CloseWithoutAck => {
+                        return;
+                    }
+                }
             }
         });
-        Ok(Response::new(Box::pin(output_stream)))
+        Ok(Response::new(ReceiverStream::new(rx)))
     }
 
     async fn poll_isolate_state(

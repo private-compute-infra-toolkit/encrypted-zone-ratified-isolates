@@ -16,6 +16,7 @@ load("@rules_rust//rust:defs.bzl", "rust_binary")
 load(":isolate_package.bzl", "isolate_package")
 
 exports_files([
+    ".clippy.toml",
     ".rustfmt.toml",
     "buf.yaml",
 ])
@@ -29,7 +30,6 @@ rust_binary(
         "//v1:setup_isolate_rust",
         "//v1:setup_service",
         "@crates//:clap",
-        "@crates//:env_logger",
         "@crates//:log",
         "@crates//:tokio",
         "@privacy-sandbox-ez-sdk//core/rust:core",
@@ -52,16 +52,5 @@ filegroup(
 filegroup(
     name = "pes_root_certs_staging",
     srcs = ["resources/pcit_root_certs/staging/pes-cert/root_certificates.pem"],
-    visibility = ["//visibility:public"],
-)
-
-# Tests use the prod-signed endorsements; the staging certificate is added to
-# cover the case where only one of the trusted certificates matches.
-filegroup(
-    name = "pes_root_certs_test",
-    srcs = [
-        ":pes_root_certs_prod",
-        ":pes_root_certs_staging",
-    ],
     visibility = ["//visibility:public"],
 )

@@ -14,10 +14,13 @@
 
 mod isolate_ez_bridge_client;
 mod isolate_server;
+pub mod logging;
+mod retry;
 pub mod rpc_dispatcher;
 mod rpc_handler;
 pub mod shm_slab_pool;
 pub mod telemetry;
+pub use logging::setup_logging;
 pub use telemetry::grpc_connector;
 pub use telemetry::traces;
 mod utils;

@@ -34,8 +34,9 @@ const TRUSTED_DOMAIN_NAME: &str = "EZ_Trusted";
 
 /// A consistent retry strategy across methods. Exponential backoff, with jitter for randomness.
 fn get_retry_strategy() -> impl Iterator<Item = std::time::Duration> {
-    ExponentialBackoff::from_millis(RETRY_BASE_DELAY_MILLIS)
-        .factor(RETRY_SCALING)
+    // TokioRetry's ExponentialBackoff arguments swap the from and factor usage.
+    ExponentialBackoff::from_millis(RETRY_SCALING)
+        .factor(RETRY_BASE_DELAY_MILLIS)
         .max_delay(std::time::Duration::from_millis(RETRY_MAX_DELAY_MILLIS))
         .map(jitter)
         .take(RETRY_COUNT)

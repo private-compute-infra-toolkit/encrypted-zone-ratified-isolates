@@ -13,6 +13,8 @@
 // limitations under the License.
 //
 
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use anyhow::Context;
 use enforcer_proto::enforcer::v1::ez_isolate_bridge_server::EzIsolateBridge;
 use enforcer_proto::enforcer::v1::isolate_ez_bridge_server::IsolateEzBridgeServer;

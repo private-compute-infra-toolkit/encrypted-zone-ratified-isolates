@@ -53,9 +53,9 @@ local_path_override(
 bazel_dep(name = "oak", version = "0.0.0")
 archive_override(
     module_name = "oak",
-    integrity = "sha256-S9nVJ+Kxr4jYUKe1nzhy+WDYvFpIF5b7oBmMw6fqfrA=",
-    strip_prefix = "oak-5d3e96404e0c2ed378acca015cbf94ce0a10206a",
-    urls = ["https://github.com/project-oak/oak/archive/5d3e96404e0c2ed378acca015cbf94ce0a10206a.tar.gz"],
+    integrity = "sha256-teCOZTwU4b4HmduYfPpHiFMlpZzTRIh0vD7f576i+6Y=",
+    strip_prefix = "oak-e25b00feedd91aaa12133bd34257b9305c5dfc8a",
+    urls = ["https://github.com/project-oak/oak/archive/e25b00feedd91aaa12133bd34257b9305c5dfc8a.tar.gz"],
 )
 
 acr = use_extension("@oak//bazel/crates:extensions.bzl", "aliased_crates_repository")

@@ -1,4 +1,4 @@
-# Gemini Context: //crypto_oracle
+# Agent Context: //crypto_oracle
 
 This directory contains a cryptographic oracle that provides key management and cryptographic
 operations as a gRPC service.

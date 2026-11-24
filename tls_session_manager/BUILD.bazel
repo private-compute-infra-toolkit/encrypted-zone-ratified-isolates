@@ -16,6 +16,7 @@ load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
 load(":isolate_package.bzl", "isolate_package")
 
 exports_files([
+    ".clippy.toml",
     ".rustfmt.toml",
     "buf.yaml",
 ])
@@ -77,13 +78,33 @@ rust_test(
     ],
 )
 
+rust_test(
+    name = "ez_invoker_test",
+    size = "small",
+    srcs = ["test/ez_invoker_test.rs"],
+    args = ["--test-threads=1"],
+    tags = ["exclusive"],
+    deps = [
+        ":tls_session_manager",
+        "//v1:tls_session_manager_service",
+        "@crates//:prost",
+        "@crates//:tempfile",
+        "@crates//:tokio",
+        "@crates//:tokio-stream",
+        "@crates//:tonic",
+        "@oak_crates_index//:anyhow",
+        "@privacy-sandbox-ez-sdk//enforcer/v1:enforcer_rust",
+        "@privacy-sandbox-ez-sdk//enforcer/v1:payload_rust",
+        "@setup-isolate//v1:setup_isolate_rust",
+    ],
+)
+
 rust_binary(
     name = "tls_session_manager_isolate",
     srcs = ["main.rs"],
     deps = [
         ":tls_session_manager",
         "//v1:tls_session_manager_service",
-        "@crates//:env_logger",
         "@crates//:log",
         "@crates//:tokio",
         "@tsm_crates//:clap",

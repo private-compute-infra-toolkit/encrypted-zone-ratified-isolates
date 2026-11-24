@@ -12,9 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::retry::retry_bridge_rpc;
 use enforcer_proto::enforcer::v1::isolate_ez_bridge_client::IsolateEzBridgeClient;
 use enforcer_proto::enforcer::v1::{
     InvokeEzRequest, InvokeEzResponse, IsolateState, NotifyIsolateStateRequest,
+    NotifyIsolateStateResponse,
 };
 use hyper_util::rt::TokioIo;
 use once_cell::sync::Lazy;
@@ -103,7 +105,7 @@ impl IsolateEzBridgeSdkClient {
         Ok(response)
     }
 
-    /// Notifies the Enforcer of a new Isolate state.
+    /// Notifies the Enforcer of a new Isolate state, retrying transient `UNAVAILABLE` responses.
     ///
     /// This typically happens when the Isolate is ready to receive traffic or is shutting down.
     ///
@@ -115,16 +117,33 @@ impl IsolateEzBridgeSdkClient {
     ///
     /// Returns a `Result` indicating success or failure.
     pub async fn new_isolate_state(&self, new_isolate_state: IsolateState) -> Result<(), Status> {
+        let operation = format!("NotifyIsolateState({new_isolate_state:?})");
+        let ack =
+            retry_bridge_rpc(&operation, || self.send_notify_isolate_state(new_isolate_state))
+                .await?;
+
+        log::info!("response: {:?}", ack);
+        log::info!("Successfully notified of new isolate state: {:?}", new_isolate_state);
+        Ok(())
+    }
+
+    async fn send_notify_isolate_state(
+        &self,
+        new_isolate_state: IsolateState,
+    ) -> Result<NotifyIsolateStateResponse, Status> {
         let mut client = self.client.clone();
         let request = NotifyIsolateStateRequest { new_isolate_state: new_isolate_state as i32 };
 
-        // This is a client-streaming RPC in the proto, so we create a stream.
-        let stream = tokio_stream::iter(vec![request]);
-        let response = client.notify_isolate_state(stream).await?;
-
-        log::info!("response: {:?}", response.into_inner());
-        log::info!("Successfully notified of new isolate state: {:?}", new_isolate_state);
-        Ok(())
+        // NotifyIsolateState is bidirectional streaming; await the response ack
+        // before dropping the stream so h2 does not send an early RST_STREAM
+        // that races request processing on the server.
+        let stream = tokio_stream::iter(std::iter::once(request));
+        let mut response_stream = client.notify_isolate_state(stream).await?.into_inner();
+        response_stream.message().await?.ok_or_else(|| {
+            Status::internal(
+                "IsolateEzBridge closed NotifyIsolateState stream without acknowledging state",
+            )
+        })
     }
 
     // TODO(b/473649647): Add shared memory management.

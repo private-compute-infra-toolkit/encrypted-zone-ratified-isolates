@@ -14,9 +14,9 @@
 
 use anyhow::Result;
 use oak_proto_rust::oak::attestation::v1::{
-    ClaimReferenceValue, Endorsement, EndorsementDetails, EndorsementReferenceValue, KeyType,
-    PesReferenceValue, Signature, SignedEndorsement, TLogReferenceValues, VerifyingKey,
-    VerifyingKeySet, endorsement, t_log_reference_values,
+    Claim, ClaimReferenceValue, Endorsement, EndorsementReferenceValue, KeyType, PesReferenceValue,
+    Signature, SignedEndorsement, TLogReferenceValues, VerifyingKey, VerifyingKeySet, endorsement,
+    t_log_reference_values,
 };
 use oak_time::Clock;
 use setup_isolate_proto::setup_isolate::v1::{
@@ -35,7 +35,6 @@ pub const PUBLISHER_CLAIM_TYPE: &str = "https://github.com/private-compute-infra
 pub const ARTIFACT_CLAIM_TYPE: &str = "https://github.com/private-compute-infra-toolkit/public-endorsement-service/blob/main/docs/claims/artifact.md";
 
 const JSON_KEY_STATEMENT_SIGNATURE: &str = "statementSignature";
-const JSON_KEY_ENDORSEMENT_SIGNATURES: &str = "endorsementSignatures";
 const JSON_KEY_VERIFICATION_MATERIAL: &str = "verificationMaterial";
 const JSON_KEY_ECDSA_P256_SHA256: &str = "ecdsaP256Sha256";
 const JSON_KEY_DER_BYTES: &str = "derBytes";
@@ -164,7 +163,7 @@ fn verify_pes_endorsement_internal(
         })?;
 
     // Step 3: Load the Publisher verifying key from PES confirmation.
-    let mut confirmation_json: serde_json::Value =
+    let confirmation_json: serde_json::Value =
         serde_json::from_slice(&signed_endorsement.pes_confirmation).map_err(|e| {
             PesValidationError {
                 error: IsolateEndorsementValidationError::ParsingFailure,
@@ -205,28 +204,39 @@ fn verify_pes_endorsement_internal(
     let ref_value = EndorsementReferenceValue {
         endorser: Some(publisher_key_set),
         required_claims: Some(ClaimReferenceValue {
-            claim_types: vec![
-                PUBLISHER_CLAIM_TYPE.to_string(),
-                ARTIFACT_CLAIM_TYPE.to_string(),
+            claims: vec![
+                Claim {
+                    r#type: PUBLISHER_CLAIM_TYPE.to_string(),
+                    ..Default::default()
+                },
+                Claim {
+                    r#type: ARTIFACT_CLAIM_TYPE.to_string(),
+                    ..Default::default()
+                },
             ],
+            ..Default::default()
         }),
         tlog: Some(TLogReferenceValues {
             strategy: Some(t_log_reference_values::Strategy::All(())),
             pes: Some(PesReferenceValue {
                 key_set: Some(pes_root_key_set),
+                ..Default::default()
             }),
             ..Default::default()
         }),
         ..Default::default()
     };
 
-    // Step 6: Verify the endorsement across all PES signatures and get the validity period.
-    let details = verify_endorsement_across_pes_signatures(
+    // Step 6: Verify the endorsement and get the validity period.
+    let details = oak_attestation_verification::verify_endorsement(
         now_utc_millis,
-        signed_endorsement,
-        &mut confirmation_json,
+        &signed_endorsement,
         &ref_value,
-    )?;
+    )
+    .map_err(|e| PesValidationError {
+        error: IsolateEndorsementValidationError::VerificationFailed,
+        message: format!("PES endorsement verification failed: {e}"),
+    })?;
     let oak_validity = details.valid.ok_or_else(|| PesValidationError {
         error: IsolateEndorsementValidationError::InvalidValidityPeriod,
         message: "Verified endorsement details missing validity period".to_string(),
@@ -243,65 +253,6 @@ fn verify_pes_endorsement_internal(
     Ok(Validity {
         not_before,
         not_after,
-    })
-}
-
-/// Verifies the endorsement by trying each signature in `endorsementSignatures`.
-///
-/// Oak's `verify_pes_confirmation` currently only inspects
-/// `endorsement_signatures.first()`. During PES key rotation, PES attaches
-/// multiple signatures to `endorsementSignatures`, and once the first signing
-/// key is retired or expired, checking only `.first()` fails even when a
-/// subsequent signature is valid. We reorder `endorsementSignatures` on each
-/// attempt so every signature is tried at `.first()` until one succeeds.
-// TODO(b/565672521): Remove this traversal of signatures once Oak's
-// `verify_pes_confirmation` iterates over all `endorsement_signatures`.
-fn verify_endorsement_across_pes_signatures(
-    now_utc_millis: i64,
-    mut signed_endorsement: SignedEndorsement,
-    confirmation_json: &mut serde_json::Value,
-    ref_value: &EndorsementReferenceValue,
-) -> Result<EndorsementDetails, PesValidationError> {
-    let num_signatures = confirmation_json
-        .get(JSON_KEY_ENDORSEMENT_SIGNATURES)
-        .and_then(|v| v.as_array())
-        .map_or(0, Vec::len);
-
-    let mut last_err = match oak_attestation_verification::verify_endorsement(
-        now_utc_millis,
-        &signed_endorsement,
-        ref_value,
-    ) {
-        Ok(details) => return Ok(details),
-        Err(e) => e,
-    };
-
-    for i in 1..num_signatures {
-        if let Some(sigs) = confirmation_json
-            .get_mut(JSON_KEY_ENDORSEMENT_SIGNATURES)
-            .and_then(|v| v.as_array_mut())
-        {
-            sigs.swap(0, i);
-        }
-        signed_endorsement.pes_confirmation =
-            serde_json::to_vec(confirmation_json).map_err(|e| PesValidationError {
-                error: IsolateEndorsementValidationError::ParsingFailure,
-                message: format!("Failed to serialize PES confirmation JSON: {e}"),
-            })?;
-
-        match oak_attestation_verification::verify_endorsement(
-            now_utc_millis,
-            &signed_endorsement,
-            ref_value,
-        ) {
-            Ok(details) => return Ok(details),
-            Err(e) => last_err = e,
-        }
-    }
-
-    Err(PesValidationError {
-        error: IsolateEndorsementValidationError::VerificationFailed,
-        message: format!("PES endorsement verification failed: {last_err}"),
     })
 }
 

@@ -55,9 +55,7 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    // Initializes the logger. It will check the `RUST_LOG` environment
-    // variable first. If it's missing, it defaults to the "info" level.
-    env_logger::init_from_env(env_logger::Env::default().default_filter_or("info"));
+    setup_isolate_sdk::logging::setup_logging("setup_isolate", true);
     let args = Args::parse();
 
     let _otel_traces = setup_isolate_sdk::traces::setup_traces(

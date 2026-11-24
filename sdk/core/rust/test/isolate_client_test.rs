@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
+
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use anyhow::Context;
 use enforcer_proto::data_scope_proto::enforcer::v1::DataScopeType;
 use enforcer_proto::enforcer::v1::isolate_ez_bridge_server::IsolateEzBridgeServer;
@@ -30,7 +33,7 @@ use std::error::Error;
 use std::path::Path;
 use std::sync::Arc;
 use test_message_proto::test_message::TestMessage;
-use test_utils::{MockIsolateEzBridgeServer, TestShmSlabPools};
+use test_utils::{MockIsolateEzBridgeServer, NotifyStateBehavior, TestShmSlabPools};
 use tokio::fs::{create_dir_all, remove_file, try_exists};
 use tokio::net::UnixListener;
 use tokio::sync::mpsc::channel;
@@ -39,7 +42,10 @@ use tokio::task::JoinHandle;
 use tokio_stream::wrappers::UnixListenerStream;
 use tokio_stream::{self as stream, StreamExt};
 use tonic::transport::Server;
-use tonic::Request;
+use tonic::{Code, Request, Status};
+
+const EXPECTED_NOTIFY_STATE_MAX_ATTEMPTS: usize = 5;
+const TRANSIENT_UNAVAILABLE_FAILURES: usize = 2;
 
 static CLIENT_UDS_PATH: Lazy<String> =
     Lazy::new(|| env::var("CLIENT_UDS_PATH").expect("Required env var"));
@@ -53,6 +59,7 @@ struct TestHarness {
 
 impl TestHarness {
     async fn start() -> Result<Self, Box<dyn Error>> {
+        rust_core::setup_logging("isolate_client_test", true);
         // Spawn the mock enforcer in a separate thread.
         let socket_path = Path::new(CLIENT_UDS_PATH.as_str());
         // Clean up any old socket file that might exist.
@@ -215,6 +222,109 @@ async fn test_isolate_client_notify_state() {
         .expect("Failed to notify isolate state");
     let last_known_state = harness.mock_enforcer_server.last_known_state().await;
     assert_eq!(last_known_state, Some(IsolateState::Ready as i32));
+
+    harness.stop().await.expect("Test harness should stop");
+}
+
+#[tokio::test]
+async fn test_isolate_client_notify_state_behavior() {
+    let harness = TestHarness::start().await.expect("Test harness should start");
+
+    harness
+        .client
+        .new_isolate_state(IsolateState::Retiring)
+        .await
+        .expect("Failed to notify Retiring state");
+    assert_eq!(
+        harness.mock_enforcer_server.last_known_state().await,
+        Some(IsolateState::Retiring as i32)
+    );
+
+    harness.mock_enforcer_server.reset_notify_state_call_count();
+    harness
+        .mock_enforcer_server
+        .set_notify_state_behavior(NotifyStateBehavior::StreamError(Status::aborted(
+            "Failed to update isolate state",
+        )))
+        .await;
+    let err = harness
+        .client
+        .new_isolate_state(IsolateState::Ready)
+        .await
+        .expect_err("Expected stream error from Enforcer");
+    assert_eq!(err.code(), Code::Aborted);
+    assert_eq!(err.message(), "Failed to update isolate state");
+    assert_eq!(harness.mock_enforcer_server.notify_state_call_count(), 1);
+    assert_eq!(
+        harness.mock_enforcer_server.last_known_state().await,
+        Some(IsolateState::Retiring as i32)
+    );
+
+    harness.mock_enforcer_server.reset_notify_state_call_count();
+    harness
+        .mock_enforcer_server
+        .set_notify_state_behavior(NotifyStateBehavior::CloseWithoutAck)
+        .await;
+    let err = harness
+        .client
+        .new_isolate_state(IsolateState::Ready)
+        .await
+        .expect_err("Expected error when Enforcer closes stream without ack");
+    assert_eq!(err.code(), Code::Internal);
+    assert_eq!(
+        err.message(),
+        "IsolateEzBridge closed NotifyIsolateState stream without acknowledging state"
+    );
+    assert_eq!(harness.mock_enforcer_server.notify_state_call_count(), 1);
+    assert_eq!(
+        harness.mock_enforcer_server.last_known_state().await,
+        Some(IsolateState::Retiring as i32)
+    );
+
+    harness.mock_enforcer_server.reset_notify_state_call_count();
+    harness
+        .mock_enforcer_server
+        .set_notify_state_behavior(NotifyStateBehavior::FailTimes {
+            remaining: TRANSIENT_UNAVAILABLE_FAILURES,
+            status: Status::unavailable("Isolate not registered"),
+        })
+        .await;
+    harness
+        .client
+        .new_isolate_state(IsolateState::Ready)
+        .await
+        .expect("NotifyIsolateState should retry UNAVAILABLE and succeed");
+    assert_eq!(
+        harness.mock_enforcer_server.notify_state_call_count(),
+        TRANSIENT_UNAVAILABLE_FAILURES + 1
+    );
+    assert_eq!(
+        harness.mock_enforcer_server.last_known_state().await,
+        Some(IsolateState::Ready as i32)
+    );
+
+    harness.mock_enforcer_server.reset_notify_state_call_count();
+    harness
+        .mock_enforcer_server
+        .set_notify_state_behavior(NotifyStateBehavior::StreamError(Status::unavailable(
+            "Isolate still unregistered",
+        )))
+        .await;
+    let err = harness
+        .client
+        .new_isolate_state(IsolateState::Retiring)
+        .await
+        .expect_err("Expected UNAVAILABLE error after exhausting retries");
+    assert_eq!(err.code(), Code::Unavailable);
+    assert_eq!(err.message(), "Isolate still unregistered");
+    assert_eq!(
+        harness.mock_enforcer_server.notify_state_call_count(),
+        EXPECTED_NOTIFY_STATE_MAX_ATTEMPTS
+    );
+    assert_eq!(
+        harness.mock_enforcer_server.last_known_state().await,
+        Some(IsolateState::Ready as i32)
+    );
 
     harness.stop().await.expect("Test harness should stop");
 }

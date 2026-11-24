@@ -29,6 +29,7 @@ rust_library(
         "@crates//:anyhow",
         "@crates//:async-stream",
         "@crates//:boring",
+        "@crates//:env_logger",
         "@crates//:futures",
         "@crates//:hyper-util",
         "@crates//:log",
@@ -188,6 +189,14 @@ rust_test(
         "@crates//:tokio-stream",
         "@crates//:tonic",
     ],
+)
+
+rust_test(
+    name = "logging_test",
+    size = "small",
+    args = ["--test-threads=1"],
+    compile_data = ["test/logging_test.rs"],
+    crate = ":core",
 )
 
 rust_test(

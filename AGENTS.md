@@ -85,7 +85,12 @@ targets pass inside every modified Ratified Isolate Bazel repository (`cd <isola
 
 -   Keep CLs small and single-purpose -- split independent features, refactors, and per-crate
     coverage additions into separate CLs. Use concise Conventional Commit titles (`<= 72` chars,
-    using valid scopes from `.versionrc.json` when scoped), one blank line after the title,
-    `<= 80`-char body lines updated when patchset scope shifts, strictly contiguous footers
-    (`Bug: b/...`, `ORIGINAL_AUTHOR=<username>`, `Change-Id: ...`) with zero blank lines between
-    trailers, and explicit human requester attribution.
+    using valid scopes from `.versionrc.json` when scoped), one blank line after the title, and
+    `<= 80`-char body lines updated when patchset scope shifts. Place any `KEY=value` agent tags
+    (`TAG=agy`, `CONV=<conversation-id>`, and `ORIGINAL_AUTHOR=<username>` when applicable) in their
+    own paragraph separated by a blank line above the `Key: value` footer block, and keep all commit
+    footers (`Bug: b/...` or `Bug: N/A`, `Change-Id: ...`) strictly contiguous at the bottom with
+    zero blank lines between trailers. When committing under a shared bot or role account rather
+    than the human requester's own Git identity, explicitly attribute the human requester
+    (`Requested by ...` and `ORIGINAL_AUTHOR=<username>`); omit both when the human requester is
+    already the Git `Author`.

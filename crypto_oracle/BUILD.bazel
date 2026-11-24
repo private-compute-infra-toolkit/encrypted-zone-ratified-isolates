@@ -16,6 +16,7 @@ load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
 load(":isolate_package.bzl", "isolate_package")
 
 exports_files([
+    ".clippy.toml",
     ".rustfmt.toml",
     "buf.yaml",
 ])
@@ -100,7 +101,6 @@ rust_binary(
         ":crypto_oracle",
         "//v1:crypto_oracle_rust",
         "//v1:crypto_oracle_service",
-        "@crates//:env_logger",
         "@crates//:log",
         "@crates//:tokio",
         "@oracle_crates//:clap",

@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## 0.23.0 (2026-11-24)
+
+
+### TLS Session Manager
+
+* **tsm:** fix ExponentialBackoff in ez_invoker
+
 ## 0.22.0 (2026-11-09)
 
 

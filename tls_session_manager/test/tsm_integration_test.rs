@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use enforcer_proto::enforcer::v1::ez_isolate_bridge_client::EzIsolateBridgeClient;
 use enforcer_proto::enforcer::v1::isolate_ez_bridge_server::{
     IsolateEzBridge, IsolateEzBridgeServer,

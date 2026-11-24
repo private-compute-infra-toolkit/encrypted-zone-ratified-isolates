@@ -50,6 +50,8 @@ test --test_verbose_timeout_warnings
 test --test_env=RUST_TEST_NOCAPTURE=1
 
 # Clippy
+build:clippy --@rules_rust//rust/settings:clippy.toml=//:.clippy.toml
+build:clippy --@rules_rust//rust/settings:clippy_flags=-Dwarnings,-Dclippy::unwrap_used,-Dclippy::expect_used
 build:clippy --aspects=@rules_rust//rust:defs.bzl%rust_clippy_aspect
 build:clippy --output_groups=+clippy_checks
 
@@ -65,8 +67,8 @@ build:analyzer --@rules_rust//:rustc_output_diagnostics=true --output_groups=+ru
 build:cpp --client_env=BAZEL_CXXOPTS=-std=c++20
 build:cpp --cxxopt=-std=c++20
 
-# Prod certificate signs the test endorsements, staging covers the multi-key case.
-test --//pes:pes_certs=//:pes_root_certs_test
+# Dedicated test fixture bundle covering valid, expired, and multi-key rotation cases.
+test --//pes:pes_certs=//pes:testdata_pes_certs
 
 coverage --cache_test_results=no
 coverage --features=-coverage

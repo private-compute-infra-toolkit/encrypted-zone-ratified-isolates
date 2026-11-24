@@ -143,7 +143,7 @@ impl<T: {{service_name}}> IsolateRpcService for {{service_name}}IsolateRpcServic
             {%- set req_type = rpc.input_type.split('.')[-1] %}
             "{{rpc.name}}" => {
                 let request = {{req_type}}::decode(request_bytes).map_err(|e| {
-                    Status::invalid_argument(format!("Unable to parse {{req_type}}: {}", e))
+                    Status::invalid_argument(format!("Unable to parse {{req_type}}: {e}"))
                 })?;
 
                 let mut tonic_request = Request::new(request);
@@ -158,8 +158,7 @@ impl<T: {{service_name}}> IsolateRpcService for {{service_name}}IsolateRpcServic
             {%- endif %}
             {%- endfor %}
             _ => Err(Status::unimplemented(format!(
-                "Method '{}' is not implemented for this service.",
-                method_name
+                "Method '{method_name}' is not implemented for this service."
             ))),
         }
     }
@@ -185,8 +184,7 @@ impl<T: {{service_name}}> IsolateRpcService for {{service_name}}IsolateRpcServic
             {%- endif %}
             {%- endfor %}
             _ => Err(Status::unimplemented(format!(
-                "Method '{}' is not implemented for this service.",
-                method_name
+                "Method '{method_name}' is not implemented for this service."
             ))),
         }
     }

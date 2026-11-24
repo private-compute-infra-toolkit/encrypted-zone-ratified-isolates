@@ -19,6 +19,7 @@ filegroup(
 
 exports_files([
     "buf.yaml",
+    ".clippy.toml",
     ".rustfmt.toml",
 ])
 

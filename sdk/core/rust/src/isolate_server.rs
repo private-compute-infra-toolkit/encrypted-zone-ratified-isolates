@@ -69,6 +69,8 @@ impl<T: EzIsolateBridge + Send + Sync + 'static> IsolateRpcServer<T> {
     /// # Returns
     ///
     /// Returns a shared `Arc<IsolateEzBridgeSdkClient>`.
+    // Public SDK startup API has an infallible signature; abort Isolate startup if bridge init fails.
+    #[allow(clippy::expect_used)]
     async fn init_client(&self) -> Arc<IsolateEzBridgeSdkClient> {
         OpenOptions::new()
             .read(true)
@@ -103,6 +105,8 @@ impl<T: EzIsolateBridge + Send + Sync + 'static> IsolateRpcServer<T> {
     ///
     /// * `shutdown_rx` - Optional receiver for a shutdown signal. If provided, the server will
     ///   stop when a message is received.
+    // Public SDK server entrypoint has an infallible signature; abort Isolate startup on UDS/bridge error.
+    #[allow(clippy::expect_used)]
     pub async fn start(&self, shutdown_rx: Option<Receiver<()>>) {
         let socket_path = SERVER_UDS_PATH.as_str();
         // Clean up any old socket file that might exist.
